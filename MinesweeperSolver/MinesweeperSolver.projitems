@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>60591e9a-f066-4af3-b1e3-b20b2b2b0b1d</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>MinesweeperSolver</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Binomial.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Combination.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)PrimeSieve.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ProbabilityEngine.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SolverAction.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SolverActionHeader.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SolverInfo.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SolverMain.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SolverTile.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,51 @@
+﻿<Window x:Class="MinesweeperGui.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:MinesweeperGui"
+        mc:Ignorable="d"
+        Title="Minesweeper solver" Height="720" Width="1250">
+    <Canvas x:Name="mainWindow" Background="#FFC7BFBF" SizeChanged="RedrawWindow">
+        <Canvas MaxWidth="180" Margin="6,9,6,10" Width="180" Height="542" Canvas.Left="16" Canvas.Top="97">
+            <Button Content="Beginner" Canvas.Left="27" Canvas.Top="117" Click="BeginnerClick"/>
+            <Button Content="Intermediate" Canvas.Left="27" Canvas.Top="168" Click="IntermediateClick"/>
+            <Button Content="Expert" Canvas.Left="27" Canvas.Top="221" Click="ExpertClick"/>
+            <Button Content="Custom" Canvas.Left="27" Canvas.Top="377" Click="CustomClick"/>
+            <Label Content="Width:" Height="32" Canvas.Left="10" Canvas.Top="278" Width="55" RenderTransformOrigin="0.178,0.47"/>
+            <TextBox x:Name="CustomWidth" Height="22" Canvas.Left="70" Canvas.Top="279" Text="TextBox" TextWrapping="Wrap" Width="95"/>
+            <Label Content="Height:" Height="32" Canvas.Left="10" Canvas.Top="306" Width="55" RenderTransformOrigin="0.178,0.47"/>
+            <TextBox x:Name="CustomHeight" Height="22" Canvas.Left="70" Canvas.Top="311" Text="TextBox" TextWrapping="Wrap" Width="95" RenderTransformOrigin="0.491,0.502"/>
+            <Label Content="Mines:" Height="32" Canvas.Left="10" Canvas.Top="336" Width="55" RenderTransformOrigin="0.178,0.47"/>
+            <TextBox x:Name="CustomMines" Height="22" Canvas.Left="70" Canvas.Top="342" Text="TextBox" TextWrapping="Wrap" Width="95" RenderTransformOrigin="0.491,0.502"/>
+            <CheckBox x:Name="useSeed" Content="Use seed" Height="18" Width="134" Canvas.Left="36" Canvas.Top="10"/>
+            <TextBox x:Name="SeedTextBox" Height="22" Canvas.Left="27" Canvas.Top="33" TextWrapping="Wrap" Width="138"/>
+            <CheckBox x:Name="showHInts" Content="Show hints" Height="18" Width="160" Canvas.Left="10" Canvas.Top="431" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
+            <CheckBox x:Name="autoPlay" Content="Auto play" Height="18" Width="160" Canvas.Left="10" Canvas.Top="454" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
+            <CheckBox x:Name="acceptGuesses" Content="Accept guesses" Height="18" Width="160" Canvas.Left="10" Canvas.Top="477" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
+            <RadioButton x:Name="safeStart" Content="Safe start" Height="16" Canvas.Left="44" Canvas.Top="66" Width="92" GroupName="startType" IsChecked="True"/>
+            <RadioButton x:Name="zeroStart" Content="Zero start" Height="20" Canvas.Left="44" Canvas.Top="89" Width="92" GroupName="startType"/>
+        </Canvas>
+        <Canvas>
+            <Label Content="Minesweeper" Grid.ColumnSpan="2" FontSize="30" FontWeight="Bold" Height="50" Margin="10,10,10,0" Canvas.Top="-9" Width="205" Canvas.Left="-9"/>
+            <Border x:Name="MinesLeftHolder" BorderBrush="#7F000000" BorderThickness="4,4,0,0" Margin="10,58,754,0" Grid.Column="1" Width="104" Height="48" Canvas.Left="211" Canvas.Top="-42">
+                <Border BorderThickness="0,0,4,4" BorderBrush="#7FFFFFFF">
+                    <Canvas x:Name="MinesLeft" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" />
+                </Border>
+            </Border>
+            <Label Content="Solver" FontSize="30" FontWeight="Bold" Height="50" Canvas.Top="35" Width="104" RenderTransformOrigin="0.519,0.521" Canvas.Left="42"/>
+        </Canvas>
+        <Border x:Name="BoardHolder" BorderBrush="#7F000000" BorderThickness="4,4,0,0" Height="562" Width="960" Canvas.Left="220" Canvas.Top="70">
+            <Border BorderThickness="0,0,4,4" BorderBrush="#7FFFFFFF">
+                <Canvas x:Name="gameCanvas" Background="#FF58F037" MouseDown="CanvasMouseDown" MouseMove="MouseMoveOnBoard" MouseLeave="MouseLeftBoard" MouseEnter="MouseEnteredBoard" MouseWheel="MouseWheelOnBoard"/>
+            </Border>
+        </Border>
+
+        <Border x:Name="MessageHolder" BorderThickness="2" BorderBrush="Black"  MaxHeight="35" Height="35" Background="#FFC7BFBF" Canvas.Bottom="5" Canvas.Left="220" Width="1000">
+            <Label x:Name="MessageLine" Content="Message line" FontWeight="Bold" FontSize="14" MouseDown="ClickMessageLine"/>
+        </Border>
+        <ScrollBar x:Name="horizontalScrollbar"  Maximum="8000" ViewportSize="2000" Orientation="Horizontal" Height="20" Width="1019" Canvas.Left="221" Canvas.Bottom="50" Scroll="HorizontalScroll" SmallChange="1"/>
+        <ScrollBar x:Name="verticalScrollbar" Maximum="8000" ViewportSize="2000" Orientation="Vertical" Height="500" Width="20" Canvas.Right="10" Canvas.Top="70" Scroll="VerticalScroll" SmallChange="1"/>
+
+    </Canvas>
+</Window>

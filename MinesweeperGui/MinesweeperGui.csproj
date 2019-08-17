@@ -1,0 +1,93 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <StartupObject>MinesweeperGui.App</StartupObject>
+    <ApplicationIcon />
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <PlatformTarget>x64</PlatformTarget>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="resources\images\0.png" />
+    <None Remove="resources\images\1.png" />
+    <None Remove="resources\images\2.png" />
+    <None Remove="resources\images\3.png" />
+    <None Remove="resources\images\4.png" />
+    <None Remove="resources\images\5.png" />
+    <None Remove="resources\images\6.png" />
+    <None Remove="resources\images\7.png" />
+    <None Remove="resources\images\8.png" />
+    <None Remove="resources\images\bombTransparent.png" />
+    <None Remove="resources\images\exploded.png" />
+    <None Remove="resources\images\facingDown.png" />
+    <None Remove="resources\images\flagged.png" />
+    <None Remove="resources\images\flaggedWrong.png" />
+    <None Remove="resources\images\led0.png" />
+    <None Remove="resources\images\led1.png" />
+    <None Remove="resources\images\led2.png" />
+    <None Remove="resources\images\led3.png" />
+    <None Remove="resources\images\led4.png" />
+    <None Remove="resources\images\led5.png" />
+    <None Remove="resources\images\led6.png" />
+    <None Remove="resources\images\led7.png" />
+    <None Remove="resources\images\led8.png" />
+    <None Remove="resources\images\led9.png" />
+    <None Remove="resources\images\led_blank.png" />
+    <None Remove="resources\images\mine.png" />
+    <None Remove="resources\images\raised.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="resources\images\0.png" />
+    <Resource Include="resources\images\1.png" />
+    <Resource Include="resources\images\2.png" />
+    <Resource Include="resources\images\3.png" />
+    <Resource Include="resources\images\4.png" />
+    <Resource Include="resources\images\5.png" />
+    <Resource Include="resources\images\6.png" />
+    <Resource Include="resources\images\7.png" />
+    <Resource Include="resources\images\8.png" />
+    <Resource Include="resources\images\bombTransparent.png" />
+    <Resource Include="resources\images\exploded.png" />
+    <Resource Include="resources\images\facingDown.png" />
+    <Resource Include="resources\images\flagged.png" />
+    <Resource Include="resources\images\flaggedWrong.png" />
+    <Resource Include="resources\images\led0.png" />
+    <Resource Include="resources\images\led1.png" />
+    <Resource Include="resources\images\led2.png" />
+    <Resource Include="resources\images\led3.png" />
+    <Resource Include="resources\images\led4.png" />
+    <Resource Include="resources\images\led5.png" />
+    <Resource Include="resources\images\led6.png" />
+    <Resource Include="resources\images\led7.png" />
+    <Resource Include="resources\images\led8.png" />
+    <Resource Include="resources\images\led9.png" />
+    <Resource Include="resources\images\led_blank.png" />
+    <Resource Include="resources\images\mine.png" />
+    <Resource Include="resources\images\raised.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </None>
+    <None Update="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </None>
+  </ItemGroup>
+
+  <Import Project="..\MinesweeperGame\MinesweeperGame.projitems" Label="Shared" />
+
+  <Import Project="..\MinesweeperSolver\MinesweeperSolver.projitems" Label="Shared" />
+
+</Project>
