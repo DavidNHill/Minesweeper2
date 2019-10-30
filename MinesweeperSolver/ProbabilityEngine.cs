@@ -39,11 +39,20 @@ namespace MinesweeperSolver {
         private int maxTotalMines;
         private int recursions;
 
+        // used to find the range of mine counts which offer the 2.5% - 97.5% weighted average
+        private int edgeMinesMin;
+        private int edgeMinesMax;
+        private int edgeMinesMinLeft;
+        private int edgeMinesMaxLeft;
+        private int mineCountUpperCutoff;
+        private int mineCountLowerCutoff;
 
         private double bestProbability = 0;
+        private double bestEdgeProbability = 0;
         private double offEdgeProbability = 0;
         private BigInteger finalSolutionCount = 0;
         private BigInteger solutionCountMultiplier = 1;
+        private bool truncatedProbs = false;   // this gets set when the number of held probabilies exceeds the permitted threshold
 
         private readonly SolverInfo information;
 
@@ -51,20 +60,23 @@ namespace MinesweeperSolver {
 
             this.information = information;
 
-		    this.witnessed = allWitnessed;
+            this.witnessed = allWitnessed;
 
             // constraints in the game
-            this.minesLeft = minesLeft;   
+            this.minesLeft = minesLeft;
             this.tilesLeft = squaresLeft;
             this.tilesOffEdge = squaresLeft - allWitnessed.Count;   // squares left off the edge and unrevealed
             this.minTotalMines = minesLeft - this.tilesOffEdge;     //we can't use so few mines that we can't fit the remainder elsewhere on the board
             this.maxTotalMines = minesLeft;
 
+            this.mineCountUpperCutoff = minesLeft;
+            this.mineCountLowerCutoff = minTotalMines;
+
             information.Write("Tiles off edge " + tilesOffEdge);
 
             //this.boxProb = [];  // the probabilities end up here
 
-             // generate a BoxWitness for each witness tile and also create a list of pruned witnesses for the brute force search
+            // generate a BoxWitness for each witness tile and also create a list of pruned witnesses for the brute force search
             int pruned = 0;
             foreach (SolverTile wit in allWitnesses) {
 
@@ -85,7 +97,7 @@ namespace MinesweeperSolver {
                 }
                 if (!duplicate) {
                     this.prunedWitnesses.Add(boxWit);
-                 } else {
+                } else {
                     pruned++;
                 }
                 this.boxWitnesses.Add(boxWit);  // all witnesses are needed for the probability engine
@@ -132,7 +144,7 @@ namespace MinesweeperSolver {
                     boxLookup.Add(tile, box);   // add this to the lookup
                 }
 
-            }   
+            }
 
             // calculate the min and max mines for each box 
             foreach (Box box in this.boxes) {
@@ -190,7 +202,7 @@ namespace MinesweeperSolver {
             }
 
             // if we don't have any local clears then do a full probability determination
-            if (this.localClears.Count  == 0) {
+            if (this.localClears.Count == 0) {
                 CalculateBoxProbabilities();
             }
 
@@ -205,7 +217,7 @@ namespace MinesweeperSolver {
 
             foreach (ProbabilityLine pl in this.workingProbs) {
 
-                int missingMines = nw.GetBoxWitness().GetMinesToFind() - (int) CountPlacedMines(pl, nw);
+                int missingMines = nw.GetBoxWitness().GetMinesToFind() - (int)CountPlacedMines(pl, nw);
 
                 if (missingMines < 0) {
                     //console.log("Missing mines < 0 ==> ignoring line");
@@ -256,7 +268,7 @@ namespace MinesweeperSolver {
             //console.log("Distributing " + missingMines + " missing mines to box " + nw.newBoxes[index].uid);
 
             this.recursions++;
-            if (this.recursions % 100 == 0) {
+            if (this.recursions % 100000 == 0) {
                 information.Write("Probability Engine recursision = " + recursions);
             }
 
@@ -344,7 +356,7 @@ namespace MinesweeperSolver {
 
             //Console.WriteLine("Edge has " + crunched.Count + " probability lines after consolidation");
 
-            edgeStore.Add(new EdgeStore(crunched));  // store the existing data 
+            edgeStore.Add(new EdgeStore(crunched, this.mask));  // store the existing data 
 
             workingProbs.Clear();  // and get a new list for the next independent edge
 
@@ -352,7 +364,7 @@ namespace MinesweeperSolver {
 
             // try and determine if every tile on this edge is dead
             if (crunched.Count == 1) {   // if the edge has the same number of mines for every possible solution
- 
+
                 bool edgeDead = true;
                 for (int i = 0; i < this.mask.Length; i++) {
                     if (this.mask[i] && !boxes[i].IsDead()) {   // if any of the boxes on this edge is not dead then the edge isn't dead
@@ -374,7 +386,7 @@ namespace MinesweeperSolver {
                             foreach (SolverTile tile in boxes[i].GetTiles()) {  // exclude the tiles
                                 information.ExcludeTile(tile);
                             }
-                         }
+                        }
                     }
 
                     //information.ExcludedTilesCount(sizeExcluded);
@@ -383,14 +395,16 @@ namespace MinesweeperSolver {
 
             }
 
-            int inEdge = 0;
+
+            this.mask = new bool[boxes.Count];
+            //int inEdge = 0;
             // reset the mask indicating that no boxes have been processed 
-            for (int i = 0; i < this.mask.Length; i++) {
-                if (this.mask[i]) {
-                    inEdge++;
-                }
-                this.mask[i] = false;
-            }
+            //for (int i = 0; i < this.mask.Length; i++) {
+            //    if (this.mask[i]) {
+            //        inEdge++;
+            //    }
+            //    this.mask[i] = false;
+            //}
             //if (inEdge == 0) {
             //    Console.WriteLine("Edge has no witnesses processed !!");
             //}
@@ -420,48 +434,61 @@ namespace MinesweeperSolver {
 
             solutionCountMultiplier = solutionCountMultiplier * hcd;
 
+            int mineCountMin = workingProbs[0].GetMineCount() + heldProbs[0].GetMineCount();
+
+            // shrink the window 
+            edgeMinesMinLeft = edgeMinesMinLeft - workingProbs[0].GetMineCount();
+            edgeMinesMaxLeft = edgeMinesMaxLeft - workingProbs[workingProbs.Count - 1].GetMineCount();
+
             foreach (ProbabilityLine pl in workingProbs) {
 
                 BigInteger plSolCount = pl.GetSolutionCount() / hcd;
 
                 foreach (ProbabilityLine epl in heldProbs) {
 
-                    if (pl.GetMineCount() + epl.GetMineCount() <= this.maxTotalMines) {
+                    // if the mine count can never reach the lower cuttoff then ignore it
+                    if (pl.GetMineCount() + epl.GetMineCount() + edgeMinesMaxLeft < this.mineCountLowerCutoff) {
+                        continue;
+                    }
 
-                        ProbabilityLine newpl = new ProbabilityLine(this.boxes.Count);
+                    // if the mine count will always be pushed beyonf the upper cuttoff then ignore it
+                    if (pl.GetMineCount() + epl.GetMineCount() + edgeMinesMinLeft > this.mineCountUpperCutoff) {
+                        continue;
+                    }
 
-                        newpl.SetMineCount(pl.GetMineCount() + epl.GetMineCount());
+                    ProbabilityLine newpl = new ProbabilityLine(this.boxes.Count);
 
-                        BigInteger eplSolCount = epl.GetSolutionCount() / hcd;
+                    newpl.SetMineCount(pl.GetMineCount() + epl.GetMineCount());
 
-                        newpl.SetSolutionCount(pl.GetSolutionCount() * eplSolCount);
+                    BigInteger eplSolCount = epl.GetSolutionCount() / hcd;
 
-                        for (int k = 0; k < this.boxes.Count; k++) {
+                    newpl.SetSolutionCount(pl.GetSolutionCount() * eplSolCount);
 
-                            BigInteger w1 = pl.GetMineBoxCount(k) * eplSolCount;
-                            BigInteger w2 = epl.GetMineBoxCount(k) * plSolCount;
-                            newpl.SetMineBoxCount(k, w1 + w2);
+                    for (int k = 0; k < this.boxes.Count; k++) {
 
-                            //npl.hashCount[i] = epl.hashCount[i].add(pl.hashCount[i]);
+                        BigInteger w1 = pl.GetMineBoxCount(k) * eplSolCount;
+                        BigInteger w2 = epl.GetMineBoxCount(k) * plSolCount;
+                        newpl.SetMineBoxCount(k, w1 + w2);
 
-                        }
-
-                        /*
-                        newpl.SetSolutionCount(pl.GetSolutionCount() * epl.GetSolutionCount());
-
-                        for (int k = 0; k < this.boxes.Count; k++) {
-
-                            BigInteger w1 = pl.GetMineBoxCount(k) * epl.GetSolutionCount();
-                            BigInteger w2 = epl.GetMineBoxCount(k) * pl.GetSolutionCount();
-                            newpl.SetMineBoxCount(k, w1 + w2);
-
-                            //npl.hashCount[i] = epl.hashCount[i].add(pl.hashCount[i]);
-
-                        }
-                        */
-                        result.Add(newpl);
+                        //npl.hashCount[i] = epl.hashCount[i].add(pl.hashCount[i]);
 
                     }
+
+                    /*
+                    newpl.SetSolutionCount(pl.GetSolutionCount() * epl.GetSolutionCount());
+
+                    for (int k = 0; k < this.boxes.Count; k++) {
+
+                        BigInteger w1 = pl.GetMineBoxCount(k) * epl.GetSolutionCount();
+                        BigInteger w2 = epl.GetMineBoxCount(k) * pl.GetSolutionCount();
+                        newpl.SetMineBoxCount(k, w1 + w2);
+
+                        //npl.hashCount[i] = epl.hashCount[i].add(pl.hashCount[i]);
+
+                    }
+                    */
+                    result.Add(newpl);
+
                 }
             }
 
@@ -471,6 +498,7 @@ namespace MinesweeperSolver {
 
             // if result is empty this is an impossible position
             if (result.Count == 0) {
+                Console.WriteLine("Impossible position encountered");
                 return;
             }
 
@@ -493,9 +521,11 @@ namespace MinesweeperSolver {
 
                 if (pl.GetMineCount() != mc) {
 
-                    if (pl.GetMineCount() > startMC + 9) {
-                        break;
-                    }
+                    //if (pl.GetMineCount() > startMC + 9) {
+                    //    //Console.WriteLine("Start mc = " + startMC + ", broke on " + pl.GetMineCount());
+                    //    truncatedProbs = true;
+                    //    break;
+                    //}
 
                     this.heldProbs.Add(npl);
                     mc = pl.GetMineCount();
@@ -561,7 +591,7 @@ namespace MinesweeperSolver {
             }
 
             //if (npl.GetMineCount() >= minTotalMines) {
-                result.Add(npl);
+            result.Add(npl);
             //}	
             //information.Write("Probability line has " + npl.GetMineCount() + " mines");
             //SolverMain.Write(target.Count + " Probability Lines compressed to " + result.Count); 
@@ -575,7 +605,7 @@ namespace MinesweeperSolver {
 
             BigInteger solutions = 1;
             for (int i = 0; i < this.boxes.Count; i++) {
-                solutions = solutions * (BigInteger) SMALL_COMBINATIONS[this.boxes[i].GetTiles().Count][(int) pl.GetMineBoxCount(i)];
+                solutions = solutions * (BigInteger)SMALL_COMBINATIONS[this.boxes[i].GetTiles().Count][(int)pl.GetMineBoxCount(i)];
             }
 
             npl.SetSolutionCount(npl.GetSolutionCount() + solutions);
@@ -600,11 +630,11 @@ namespace MinesweeperSolver {
 
             BoxWitness excluded = null;
             foreach (BoxWitness boxWit in this.boxWitnesses) {
-                 if (!boxWit.IsProcessed() && !boxWit.GetTile().IsExcluded()) {
+                if (!boxWit.IsProcessed() && !boxWit.GetTile().IsExcluded()) {
                     return new NextWitness(boxWit);
-                 } else if (!boxWit.IsProcessed()) {
+                } else if (!boxWit.IsProcessed()) {
                     excluded = boxWit;
-                 }
+                }
             }
             if (excluded != null) {
                 return new NextWitness(excluded);
@@ -710,7 +740,7 @@ namespace MinesweeperSolver {
             // if we have found some local clears then stop and use these
             if (this.localClears.Count > 0) {
                 information.Write(this.localClears.Count + " Local clears have been found");
-                return null;
+                //return null;
             }
 
             //independentGroups++;
@@ -727,22 +757,216 @@ namespace MinesweeperSolver {
                 information.Write("Starting a new independent edge");
             }
 
-             // only crunch it down for non-trivial probability lines unless it is the last set - this is an efficiency decision
-             if (nw == null) {
+            // If there is nothing else to process then either do the local clears or calculate the probabilities
+            if (nw == null) {
+
+                // if we have found some local clears then stop and use these
+                if (this.localClears.Count > 0) {
+                    information.Write("In total " + this.localClears.Count + " Local clears have been found");
+                    return null;
+                }
 
                 edgeStore.Sort(EdgeStore.SortByLineCount);
 
-                //long start = DateTime.Now.Ticks;
+                AnalyseAllEdges();
+
+                long start = DateTime.Now.Ticks;
                 foreach (EdgeStore edgeDetails in edgeStore) {
                     workingProbs = edgeDetails.data;
                     CombineProbabilities();
                 }
-                //Console.WriteLine("Combined all edges in " + (DateTime.Now.Ticks - start) + " ticks");
+                information.Write("Combined all edges in " + (DateTime.Now.Ticks - start) + " ticks");
 
             }
 
             // return the next witness to process
             return nw;
+
+        }
+
+        // take a look at what edges we have and show some information - trying to get some ideas on how we can get faster good guesses
+        private void AnalyseAllEdges() {
+
+            //Console.WriteLine("Number of tiles off the edge " + tilesOffEdge);
+            //Console.WriteLine("Number of mines to find " + minesLeft);
+
+            this.edgeMinesMin = 0;
+            this.edgeMinesMax = 0;
+
+            foreach (EdgeStore edge in edgeStore) {
+                int edgeMinMines = edge.data[0].GetMineCount();
+                int edgeMaxMines = edge.data[edge.data.Count - 1].GetMineCount();
+
+                edgeMinesMin = edgeMinesMin + edgeMinMines;
+                edgeMinesMax = edgeMinesMax + edgeMaxMines;
+            }
+
+            information.Write("Min mines on all edges " + edgeMinesMin + ", max " + edgeMinesMax);
+            this.edgeMinesMaxLeft = this.edgeMinesMax;  // these values are used  in the merge logic to reduce the number of lines need to keep
+            this.edgeMinesMinLeft = this.edgeMinesMin;
+
+            this.mineCountLowerCutoff = this.edgeMinesMin;
+            this.mineCountUpperCutoff = Math.Min(this.edgeMinesMax, this.minesLeft);  // can't have more mines than are left
+
+            // comment this out when doing large board analysis
+            //return;
+
+            // the code below reduces the range of mine count values to just be the 'significant' range 
+
+            List<ProbabilityLine> store = new List<ProbabilityLine>();
+            List<ProbabilityLine> store1 = new List<ProbabilityLine>();
+
+            ProbabilityLine init = new ProbabilityLine(0);
+            init.SetSolutionCount(1);
+
+            store.Add(init);
+
+            // combine all the edges to determine the relative weights of the mine count
+            foreach (EdgeStore edgeDetails in edgeStore) {
+
+                foreach (ProbabilityLine pl in edgeDetails.data) {
+
+                    BigInteger plSolCount = pl.GetSolutionCount();
+
+                    foreach (ProbabilityLine epl in store) {
+
+                        if (pl.GetMineCount() + epl.GetMineCount() <= this.maxTotalMines) {
+
+                            ProbabilityLine newpl = new ProbabilityLine(0);
+
+                            newpl.SetMineCount(pl.GetMineCount() + epl.GetMineCount());
+
+                            BigInteger eplSolCount = epl.GetSolutionCount();
+
+                            newpl.SetSolutionCount(pl.GetSolutionCount() * eplSolCount);
+
+                            store1.Add(newpl);
+
+                        }
+                    }
+                }
+
+                store.Clear();
+
+                // sort into mine order 
+                store1.Sort();
+
+                int mc = store1[0].GetMineCount();
+                ProbabilityLine npl = new ProbabilityLine(0);
+                npl.SetMineCount(mc);
+
+                foreach (ProbabilityLine pl in store1) {
+
+                    if (pl.GetMineCount() != mc) {
+
+                        store.Add(npl);
+                        mc = pl.GetMineCount();
+                        npl = new ProbabilityLine(0);
+                        npl.SetMineCount(mc);
+                    }
+                    npl.SetSolutionCount(npl.GetSolutionCount() + pl.GetSolutionCount());
+
+                }
+
+                store.Add(npl);
+                store1.Clear();
+            }
+
+            BigInteger total = 0;
+            int mineValues = 0;
+            foreach (ProbabilityLine pl in store) {
+                if (pl.GetMineCount() >= this.minTotalMines) {    // if the mine count for this solution is less than the minimum it can't be valid
+                    BigInteger mult = SolverMain.Calculate(this.minesLeft - pl.GetMineCount(), this.tilesOffEdge);  //# of ways the rest of the board can be formed
+                    total = total + mult * pl.GetSolutionCount();
+                    mineValues++;
+                }
+            }
+
+            //this.mineCountLowerCutoff = this.edgeMinesMin;
+            //this.mineCountUpperCutoff = Math.Min(this.edgeMinesMax, this.minesLeft);  // can't have more mines than are left
+            BigInteger soFar = 0;
+            foreach (ProbabilityLine pl in store) {
+                if (pl.GetMineCount() >= this.minTotalMines) {    // if the mine count for this solution is less than the minimum it can't be valid
+                    BigInteger mult = SolverMain.Calculate(this.minesLeft - pl.GetMineCount(), this.tilesOffEdge);  //# of ways the rest of the board can be formed
+                    soFar = soFar + mult * pl.GetSolutionCount();
+                    double perc = Combination.DivideBigIntegerToDouble(soFar, total, 6) * 100;
+                    //Console.WriteLine("Mine count " + pl.GetMineCount() + " has solution count " + pl.GetSolutionCount() + " multiplier " + mult + " running % " + perc);
+                    //Console.WriteLine("Mine count " + pl.GetMineCount() + " has solution count " + pl.GetSolutionCount() + " has running % " + perc);
+
+                    if (mineValues > 30 && perc < 2.5) {
+                        this.mineCountLowerCutoff = pl.GetMineCount();
+                    }
+
+                    if (mineValues > 30 && perc > 97.5) {
+                        this.mineCountUpperCutoff = pl.GetMineCount();
+                        break;
+                    }
+                }
+            }
+
+            information.Write("Significant range " + this.mineCountLowerCutoff + " - " + this.mineCountUpperCutoff);
+            //this.edgeMinesMaxLeft = this.edgeMinesMax;
+            //this.edgeMinesMinLeft = this.edgeMinesMin;
+
+
+            return;
+
+            // below here are experimental ideas on getting a good guess on very large boards
+
+            int midRangeAllMines = (this.mineCountLowerCutoff + this.mineCountUpperCutoff) / 2;
+            BigInteger[] tally = new BigInteger[boxes.Count];
+            double[] probability = new double[boxes.Count];
+
+
+            foreach (EdgeStore edgeDetails in edgeStore) {
+
+                int sizeRangeEdgeMines = (edgeDetails.data[edgeDetails.data.Count - 1].GetMineCount() - edgeDetails.data[0].GetMineCount()) / 2;
+
+                int start = (this.mineCountLowerCutoff - edgeDetails.data[0].GetMineCount() + this.mineCountUpperCutoff - edgeDetails.data[edgeDetails.data.Count - 1].GetMineCount()) / 2;
+                //int start = midRangeAllMines - sizeRangeEdgeMines;
+
+                //BigInteger mult = Combination.Calculate(this.minesLeft - start, this.tilesOffEdge);
+                BigInteger totalTally = 0;
+
+                foreach (ProbabilityLine pl in edgeDetails.data) {
+
+                    BigInteger mult = Combination.Calculate(this.minesLeft - start - pl.GetMineCount(), this.tilesOffEdge);
+                    totalTally += mult * pl.GetSolutionCount();
+                    for (int i = 0; i < boxes.Count; i++) {
+                        if (edgeDetails.mask[i]) {
+                            BigInteger work = pl.GetMineBoxCount(i) * mult;
+                            tally[i] += work;
+                        }
+                    }
+
+                    //mult = mult * (this.tilesOffEdge - start) / (start + 1);
+                    //start++;
+
+                }
+
+                for (int i = 0; i < boxes.Count; i++) {
+                    if (edgeDetails.mask[i]) {
+                        probability[i] = Combination.DivideBigIntegerToDouble(tally[i], totalTally, 6) / boxes[i].GetTiles().Count;
+                    }
+                }
+
+                int minIndex = -1;
+                for (int i = 0; i < boxes.Count; i++) {
+                    if (edgeDetails.mask[i]) {
+                        if (minIndex == -1 || probability[i] < probability[minIndex]) {
+                            minIndex = i;
+                        }
+                    }
+                }
+
+                if (minIndex != -1) {
+                    information.Write("Best guess is " + boxes[minIndex].GetTiles()[0].AsText() + " with " + (1 - probability[minIndex]));
+                } else {
+                    information.Write("No Guess found");
+                }
+
+            }
+
 
         }
 
@@ -927,7 +1151,7 @@ namespace MinesweeperSolver {
                 }
 
                 // lookup the box this adjacent tile is in
-                boxLookup.TryGetValue(adjLoc, out Box box);   
+                boxLookup.TryGetValue(adjLoc, out Box box);
 
                 // if a box can't be found for the adjacent tile then the candidate can't be dead
                 if (box == null) {
@@ -955,7 +1179,7 @@ namespace MinesweeperSolver {
         }
 
         // determine a set of independent witnesses which can be used to brute force the solution space more efficiently then a basic 'pick r from n' 
-        private void GenerateIndependentWitnesses() {
+        public void GenerateIndependentWitnesses() {
 
             this.remainingSquares = this.witnessed.Count;
 
@@ -963,6 +1187,10 @@ namespace MinesweeperSolver {
             foreach (BoxWitness w in this.prunedWitnesses) {
 
                 //console.log("Checking witness " + w.tile.asText() + " for independence");
+                if (w.GetTile().IsExcluded()) {
+                    //information.Write("Witness " + w.GetTile().AsText() + " is excluded");
+                    continue;  // don't process excluded witnesses
+                }
 
                 bool okay = true;
                 foreach (BoxWitness iw in this.independentWitnesses) {
@@ -975,7 +1203,7 @@ namespace MinesweeperSolver {
 
                 // split the witnesses into dependent ones and independent ones 
                 if (okay) {
-                    //console.log("true");
+                    information.Write(w.GetTile().AsText() + " is independent witness");
                     this.remainingSquares = this.remainingSquares - w.GetAdjacentTiles().Count;
                     this.independentIterations = this.independentIterations * SolverMain.Calculate(w.GetMinesToFind(), w.GetAdjacentTiles().Count);
                     this.independentMines = this.independentMines + w.GetMinesToFind();
@@ -985,7 +1213,7 @@ namespace MinesweeperSolver {
                 }
             }
 
-            information.Write("Calculated " + this.independentWitnesses.Count + " independent witnesses");
+            information.Write("Calculated " + this.independentWitnesses.Count + " independent witnesses and " + this.dependentWitnesses.Count + " dependent witnesses");
 
         }
 
@@ -994,6 +1222,10 @@ namespace MinesweeperSolver {
         private void CalculateBoxProbabilities() {
 
             //long start = DateTime.Now.Ticks;
+
+            if (truncatedProbs) {
+                Console.WriteLine("probability line combining was truncated");
+            }
 
             information.Write("Solution count multiplier is " + this.solutionCountMultiplier);
 
@@ -1054,16 +1286,16 @@ namespace MinesweeperSolver {
                 if (totalTally != 0) {
                     if (tally[i] == totalTally) {  // a mine
                         information.Write("Box " + i + " contains all mines");
-                        foreach (SolverTile tile in boxes[i].GetTiles()) {
-                            information.MineFound(tile);
-                        }
+                        //foreach (SolverTile tile in boxes[i].GetTiles()) {
+                        //    information.MineFound(tile);
+                        //}
                         boxes[i].SetProbability(0);
                         //this.boxProb[i] = 0;
                         //for (Square squ: boxes.get(i).getSquares()) {  // add the squares in the box to the list of mines
                         //   mines.add(squ);
                         //}
                     } else {
-                         //this.boxProb[i] = 1 - Combination.DivideBigIntegerToDouble(tally[i], totalTally, 6);
+                        //this.boxProb[i] = 1 - Combination.DivideBigIntegerToDouble(tally[i], totalTally, 6);
                         boxes[i].SetProbability(1 - Combination.DivideBigIntegerToDouble(tally[i], totalTally, 6));
                     }
 
@@ -1127,7 +1359,7 @@ namespace MinesweeperSolver {
             // avoid divide by zero
             if (this.tilesOffEdge != 0 && totalTally != 0) {
                 //offEdgeProbability = 1 - outsideTally / (totalTally * BigInt(this.squaresLeft));
-                this.offEdgeProbability = 1 - Combination.DivideBigIntegerToDouble (outsideTally, totalTally * new BigInteger(this.tilesOffEdge), 6);
+                this.offEdgeProbability = 1 - Combination.DivideBigIntegerToDouble(outsideTally, totalTally * new BigInteger(this.tilesOffEdge), 6);
             } else {
                 this.offEdgeProbability = 0;
             }
@@ -1152,16 +1384,17 @@ namespace MinesweeperSolver {
                 //double prob = this.boxProb[b.GetUID()];
                 double prob = b.GetProbability();
                 if (boxLiving || prob == 1) {   // if living or 100% safe then consider this probability
-                    if (hwm <= prob) {
-                        hwm = prob;
+                    if (this.bestEdgeProbability <= prob) {
+                        this.bestEdgeProbability = prob;
                     }
                 }
             }
 
             boxes.Sort(Box.CompareByProbabilityDescending);
 
-            this.bestProbability = hwm;
+            this.bestProbability = Math.Max(this.bestEdgeProbability, this.offEdgeProbability);
 
+            information.Write("Best edge probability is " + this.bestEdgeProbability);
             information.Write("Off edge probability is " + this.offEdgeProbability);
             information.Write("Best probability is " + this.bestProbability);
             information.Write("Game has  " + this.finalSolutionCount + " candidate solutions");
@@ -1248,7 +1481,7 @@ namespace MinesweeperSolver {
         }
 
         public int GetSolutionCountMagnitude() {
-            return (int) Math.Floor(BigInteger.Log10(this.finalSolutionCount));
+            return (int)Math.Floor(BigInteger.Log10(this.finalSolutionCount));
         }
 
         // returns the propability of this tile being safe 
@@ -1260,7 +1493,10 @@ namespace MinesweeperSolver {
             } else {
                 return box.GetProbability();
             }
+        }
 
+        public double GetBestEdgeProbability() {
+            return this.bestEdgeProbability;
         }
 
         // returns an array of 'SolverTile' which are clear based on analysis of their independent edge only
@@ -1268,16 +1504,32 @@ namespace MinesweeperSolver {
             return this.localClears;
         }
 
+        public bool getTruncated() {
+            return this.truncatedProbs;
+        }
+
+        public List<BoxWitness> GetIndependentWitnesses() {
+            return this.independentWitnesses;
+        }
+
+        public List<BoxWitness> GetDependentWitnesses() {
+            return this.dependentWitnesses;
+        }
+
+        public SolverInfo GetSolverInfo() {
+            return this.information;
+        }
+
     }
 
-     /*
-     * Used to hold a solution
-     */
+    /*
+    * Used to hold a solution
+    */
     public class ProbabilityLine : IComparable<ProbabilityLine> {
 
         private int mineCount = 0;
         private BigInteger solutionCount;
-        private BigInteger[] mineBoxCount; 
+        private BigInteger[] mineBoxCount;
 
         public ProbabilityLine(int boxCount) {
             this.mineCount = 0;
@@ -1323,9 +1575,11 @@ namespace MinesweeperSolver {
     public class EdgeStore {
 
         public readonly List<ProbabilityLine> data;
+        public bool[] mask;
 
-        public EdgeStore(List<ProbabilityLine> data) {
+        public EdgeStore(List<ProbabilityLine> data, bool[] mask) {
             this.data = data;
+            this.mask = mask;
         }
 
         public static int SortByLineCount(EdgeStore a, EdgeStore b) {
@@ -1349,7 +1603,7 @@ namespace MinesweeperSolver {
 
             foreach (Box box in this.boxWitness.GetBoxes()) {
 
-                 if (box.IsProcessed()) {
+                if (box.IsProcessed()) {
                     this.oldBoxes.Add(box);
                 } else {
                     this.newBoxes.Add(box);
@@ -1370,7 +1624,7 @@ namespace MinesweeperSolver {
         }
 
 
-}
+    }
 
 
 
@@ -1441,7 +1695,7 @@ namespace MinesweeperSolver {
             }
 
             foreach (SolverTile tile1 in boxWitness.tiles) {
-                 foreach (SolverTile tile2 in this.tiles) {
+                foreach (SolverTile tile2 in this.tiles) {
                     if (tile1.IsEqual(tile2)) {  // if they share a tile then return true
                         return true;
                     }
@@ -1699,7 +1953,7 @@ namespace MinesweeperSolver {
         public static int CompareByProbabilityDescending(Box x, Box y) {
 
             return -x.safeProbability.CompareTo(y.safeProbability);
-            
+
         }
     }
 

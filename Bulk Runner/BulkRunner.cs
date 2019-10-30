@@ -15,7 +15,7 @@ namespace Bulk_Runner {
 
         static void Main(string[] args) {
 
-            GameDescription description = GameDescription.EXPERT_ZERO;
+            GameDescription description = GameDescription.EXPERT_SAFE;
             //GameDescription description = new GameDescription(1000, 1000, 150000, GameType.Zero);
             //GameDescription description = new GameDescription(100, 100, 1500, GameType.Zero);
             //GameDescription description = new GameDescription(50, 50, 500, GameType.Safe);
@@ -53,7 +53,7 @@ namespace Bulk_Runner {
 
                 MinesweeperGame game = new MinesweeperGame(description, seed);
 
-                //Write("Seed " + game.seed + " starting");
+                Write("Seed " + game.seed + " starting");
 
                 GameStatus status = AutoPlayRunner(game);
 

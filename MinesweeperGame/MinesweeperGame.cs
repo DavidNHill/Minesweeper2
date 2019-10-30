@@ -74,7 +74,13 @@ namespace MinesweeperControl {
         private MinesweeperTile[] tiles;
         private int minesLeft;
 
-        public MinesweeperGame(GameDescription description, int seed) {
+        private readonly bool hardcore;
+        private int deaths = 0;
+
+        public MinesweeperGame(GameDescription description, int seed) : this(description, seed, true) {
+        }
+
+        public MinesweeperGame(GameDescription description, int seed, bool hardcore) {
 
             if (seed == 0) {
                 this.seed = new Random().Next(1, Int32.MaxValue);
@@ -83,7 +89,8 @@ namespace MinesweeperControl {
             }
 
             this.description = description;
-
+            this.hardcore = hardcore;
+            
             // create adjacent offsets
             adjacentOffset[0] = -description.width - 1;
             adjacentOffset[1] = -description.width;
@@ -163,7 +170,12 @@ namespace MinesweeperControl {
                     actionResults.Add(new ActionResult(action.x, action.y, ResultType.Flagged));
                     minesLeft--;
                 } else {
-                    actionResults.Add(new ActionResult(action.x, action.y, ResultType.Hidden));
+                    if (tile.GetExploded()) {
+                        actionResults.Add(new ActionResult(action.x, action.y, ResultType.Exploded));
+                    } else {
+                        actionResults.Add(new ActionResult(action.x, action.y, ResultType.Hidden));
+                    }
+ 
                     minesLeft++;
                 }
             }
@@ -191,10 +203,16 @@ namespace MinesweeperControl {
             if (tile.IsFlagged()) {
                 Write("Unable to Clear: Clicked on a Flag");
 
+            } else if (tile.GetExploded()) {
+                Write("Unable to Clear: Clicked on an exploded Mine");
+ 
             } else if (tile.IsMine()) {
                 //Write("Gameover: Clicked on a mine");
 
-                this.gameStatus = GameStatus.Lost;
+                deaths++;
+                if (hardcore) {
+                    this.gameStatus = GameStatus.Lost;
+                }
                 tile.SetExploded(true);
                 actionResults.Add(new ActionResult(action.x, action.y, ResultType.Exploded));
 
@@ -262,7 +280,10 @@ namespace MinesweeperControl {
 
             // if we have triggered a bomb then return
             if (bombCount != 0) {
-                this.gameStatus = GameStatus.Lost;
+                deaths = deaths + bombCount;
+                if (hardcore) {
+                    this.gameStatus = GameStatus.Lost;
+                }
                 return actionResults;
             }
 

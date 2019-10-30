@@ -100,13 +100,17 @@ namespace MinesweeperSolver {
                     tiles[ar.x, ar.y].SetFlagged(true);
                 } else if (ar.resultType == ResultType.Hidden) {
                     tiles[ar.x, ar.y].SetFlagged(false);
+                } else if (ar.resultType == ResultType.Exploded) {
+                    SolverTile tile = tiles[ar.x, ar.y];
+                    tile.SetFlagged(false);
+                    MineFound(tile);
                 }
 
             }
 
             // find and mark tiles as exhausted
             //int removed = 0;
-            if (newClears.Count > 0) {
+            //if (newClears.Count > 0) {
 
                  foreach (SolverTile tile in livingWitnesses) {
 
@@ -117,7 +121,7 @@ namespace MinesweeperSolver {
                 // remove all exhausted tiles from the list of witnesses
                 livingWitnesses.RemoveWhere(x => x.IsExhausted());
 
-            }
+            //}
 
             // add new witnesses which aren't exhausted
             foreach (SolverTile newTile in newClears) {
@@ -147,13 +151,22 @@ namespace MinesweeperSolver {
         // sets the tile as a mine, stores it for future use and returns true if it is currently flagged
         public bool MineFound(SolverTile tile) {
 
+            // if this is already known to be mine then noting to do
+            if (tile.IsMine()) {
+                return tile.IsFlagged();
+            }
+
             tilesLeft--;
 
             tile.SetAsMine(key);
 
             knownMines.Add(tile);
-            deadTiles.Remove(tile);  // remove the tile if it was on the dead list
-            if (excludedTiles.Remove(tile)) {  // remove the tile if it was excluded
+
+            if (tile.IsDead()) {
+                deadTiles.Remove(tile);  // remove the tile if it was on the dead list
+            }
+            if (tile.IsExcluded()) {
+                excludedTiles.Remove(tile); // remove the tile if it was excluded
                 excludedMinesCount--;
             }
 

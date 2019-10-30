@@ -8,23 +8,24 @@
         Title="Minesweeper solver" Height="720" Width="1250">
     <Canvas x:Name="mainWindow" Background="#FFC7BFBF" SizeChanged="RedrawWindow">
         <Canvas MaxWidth="180" Margin="6,9,6,10" Width="180" Height="542" Canvas.Left="16" Canvas.Top="97">
-            <Button Content="Beginner" Canvas.Left="27" Canvas.Top="117" Click="BeginnerClick"/>
-            <Button Content="Intermediate" Canvas.Left="27" Canvas.Top="168" Click="IntermediateClick"/>
-            <Button Content="Expert" Canvas.Left="27" Canvas.Top="221" Click="ExpertClick"/>
-            <Button Content="Custom" Canvas.Left="27" Canvas.Top="377" Click="CustomClick"/>
-            <Label Content="Width:" Height="32" Canvas.Left="10" Canvas.Top="278" Width="55" RenderTransformOrigin="0.178,0.47"/>
-            <TextBox x:Name="CustomWidth" Height="22" Canvas.Left="70" Canvas.Top="279" Text="TextBox" TextWrapping="Wrap" Width="95"/>
-            <Label Content="Height:" Height="32" Canvas.Left="10" Canvas.Top="306" Width="55" RenderTransformOrigin="0.178,0.47"/>
-            <TextBox x:Name="CustomHeight" Height="22" Canvas.Left="70" Canvas.Top="311" Text="TextBox" TextWrapping="Wrap" Width="95" RenderTransformOrigin="0.491,0.502"/>
-            <Label Content="Mines:" Height="32" Canvas.Left="10" Canvas.Top="336" Width="55" RenderTransformOrigin="0.178,0.47"/>
-            <TextBox x:Name="CustomMines" Height="22" Canvas.Left="70" Canvas.Top="342" Text="TextBox" TextWrapping="Wrap" Width="95" RenderTransformOrigin="0.491,0.502"/>
+            <Button Content="Beginner" Canvas.Left="27" Canvas.Top="140" Click="BeginnerClick"/>
+            <Button Content="Intermediate" Canvas.Left="27" Canvas.Top="191" Click="IntermediateClick"/>
+            <Button Content="Expert" Canvas.Left="27" Canvas.Top="244" Click="ExpertClick"/>
+            <Button Content="Custom" Canvas.Left="27" Canvas.Top="400" Click="CustomClick"/>
+            <Label Content="Width:" Height="32" Canvas.Left="10" Canvas.Top="301" Width="55" RenderTransformOrigin="0.178,0.47"/>
+            <TextBox x:Name="CustomWidth" Height="22" Canvas.Left="70" Canvas.Top="302" Text="TextBox" TextWrapping="Wrap" Width="95"/>
+            <Label Content="Height:" Height="32" Canvas.Left="10" Canvas.Top="329" Width="55" RenderTransformOrigin="0.178,0.47"/>
+            <TextBox x:Name="CustomHeight" Height="22" Canvas.Left="70" Canvas.Top="334" Text="TextBox" TextWrapping="Wrap" Width="95" RenderTransformOrigin="0.491,0.502"/>
+            <Label Content="Mines:" Height="32" Canvas.Left="10" Canvas.Top="359" Width="55" RenderTransformOrigin="0.178,0.47"/>
+            <TextBox x:Name="CustomMines" Height="22" Canvas.Left="70" Canvas.Top="365" Text="TextBox" TextWrapping="Wrap" Width="95" RenderTransformOrigin="0.491,0.502"/>
             <CheckBox x:Name="useSeed" Content="Use seed" Height="18" Width="134" Canvas.Left="36" Canvas.Top="10"/>
             <TextBox x:Name="SeedTextBox" Height="22" Canvas.Left="27" Canvas.Top="33" TextWrapping="Wrap" Width="138"/>
-            <CheckBox x:Name="showHInts" Content="Show hints" Height="18" Width="160" Canvas.Left="10" Canvas.Top="431" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
-            <CheckBox x:Name="autoPlay" Content="Auto play" Height="18" Width="160" Canvas.Left="10" Canvas.Top="454" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
-            <CheckBox x:Name="acceptGuesses" Content="Accept guesses" Height="18" Width="160" Canvas.Left="10" Canvas.Top="477" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
+            <CheckBox x:Name="showHInts" Content="Show hints" Height="18" Width="160" Canvas.Left="10" Canvas.Top="454" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
+            <CheckBox x:Name="autoPlay" Content="Auto play" Height="18" Width="160" Canvas.Left="10" Canvas.Top="477" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
+            <CheckBox x:Name="acceptGuesses" Content="Accept guesses" Height="18" Width="160" Canvas.Left="10" Canvas.Top="500" Checked="SetSolverDetails" Unchecked="SetSolverDetails"/>
             <RadioButton x:Name="safeStart" Content="Safe start" Height="16" Canvas.Left="44" Canvas.Top="66" Width="92" GroupName="startType" IsChecked="True"/>
             <RadioButton x:Name="zeroStart" Content="Zero start" Height="20" Canvas.Left="44" Canvas.Top="89" Width="92" GroupName="startType"/>
+            <CheckBox x:Name="hardcore" Content="Hard core" Height="18" Width="110" Canvas.Left="43" Canvas.Top="114" IsChecked="True"/>
         </Canvas>
         <Canvas>
             <Label Content="Minesweeper" Grid.ColumnSpan="2" FontSize="30" FontWeight="Bold" Height="50" Margin="10,10,10,0" Canvas.Top="-9" Width="205" Canvas.Left="-9"/>

@@ -11,6 +11,11 @@ namespace MinesweeperSolver {
 
     class SolverMain {
 
+        public const int BRUTE_FORCE_ANALYSIS_TREE_DEPTH = 20;
+        public const int MAX_BFDA_SOLUTIONS = 400;
+        public const int BRUTE_FORCE_ANALYSIS_MAX_NODES = 150000;
+        public const bool PRUNE_BF_ANALYSIS = true;
+
         private static readonly Binomial binomial = new Binomial(500000, 500);
 
         public static SolverActionHeader FindActions(SolverInfo information) {
@@ -47,7 +52,7 @@ namespace MinesweeperSolver {
 
                 // when all the tiles are dead return the first one (they are all equally good or bad)
                 foreach (SolverTile guess in information.GetDeadTiles()) {
-                    actions.Add(new SolverAction(guess, ActionType.Clear, 0.5));
+                    actions.Add(new SolverAction(guess, ActionType.Clear, 0.5));  // not all 0.5 safe though !!
                     return BuildActionHeader(information, actions);
                 }
             }
@@ -92,14 +97,21 @@ namespace MinesweeperSolver {
                 foreach (SolverTile tile in localClears) {   // place each local clear into an action
                     actions.Add(new SolverAction(tile, ActionType.Clear, 1));
                 }
-                information.Write("The probability engine has found " + localClears.Count + " safe clears");
+                information.Write("The probability engine has found " + localClears.Count + " safe Local Clears");
                 return BuildActionHeader(information, actions);
+            }
+
+            if (pe.GetBestEdgeProbability() == 1) {
+                List<SolverAction> clears = pe.GetBestCandidates(1);
+                information.Write("The probability engine has found " + clears.Count + " safe Clears");
+                return BuildActionHeader(information, clears);
             }
 
             // after this point we know the probability engine didn't return any certain clears. But there are still some special cases when everything off edge is either clear or a mine
 
             // If there are tiles off the edge and they are definitely safe then clear them all, or mines then flag them
             if (offEdgeTilesLeft > 0 &&  (pe.GetOffEdgeProbability() == 1  || pe.GetOffEdgeProbability() == 0)) {
+                information.Write("Looking for the certain moves off the edge found by the probability engine");
                 bool clear;
                  if (pe.GetOffEdgeProbability() == 1) {
                     //Console.WriteLine("All off edge tiles are clear");
@@ -116,8 +128,10 @@ namespace MinesweeperSolver {
 
                         if (tile.IsHidden() && !witnessedSet.Contains(tile) && !tile.IsExcluded()) {
                             if (clear) {
+                                information.Write(tile.AsText() + " is clear");
                                 actions.Add(new SolverAction(tile, ActionType.Clear, 1));
                             } else {
+                                information.Write(tile.AsText() + " is mine");
                                 information.MineFound(tile);
                                 actions.Add(new SolverAction(tile, ActionType.Flag, 0));
                             }
@@ -130,7 +144,7 @@ namespace MinesweeperSolver {
                     //information.Write("The solver has determined all off edge tiles must be safe");
                     return BuildActionHeader(information, actions);
                 } else {
-                    //Console.WriteLine("No Actions found!");
+                    Console.WriteLine("No Actions found!");
                 }
 
             }
@@ -141,6 +155,56 @@ namespace MinesweeperSolver {
 
             // we know the Probability Engine completed so hold onto the information for the gui 
             information.SetProbabilityEngine(pe);
+
+            // if there aren't many possible solutions then do a brute force search
+            if (pe.GetSolutionCount() <= MAX_BFDA_SOLUTIONS) {
+
+                pe.GenerateIndependentWitnesses();
+
+                List<SolverTile> allCoveredTiles = new List<SolverTile>();
+
+                for (int x = 0; x < information.description.width; x++) {
+                    for (int y = 0; y < information.description.height; y++) {
+                        SolverTile tile = information.GetTile(x, y);
+                        if (tile.IsHidden() && !tile.IsExcluded() && !tile.IsMine()) {
+                            allCoveredTiles.Add(tile);
+                        }
+                    }
+                }
+
+                WitnessWebIterator iterator = new WitnessWebIterator(pe, allCoveredTiles, -1);
+
+                Cruncher bruteForce = new Cruncher(information, iterator, pe);
+
+                int solutionCount = bruteForce.Crunch();
+
+                information.Write("Solutions found by brute force " + solutionCount + " after " + iterator.GetIterations() + " iterations");
+
+                BruteForceAnalysis bfa = bruteForce.GetBruteForceAnalysis();
+
+                bfa.process();
+
+                // if after trying to process the data we can't complete then abandon it
+                if (!bfa.IsComplete()) {
+                    information.Write("Abandoned the Brute Force Analysis after " + bfa.GetNodeCount() + " steps");
+                    bfa = null;
+
+                } else { // otherwise try and get the best long term move
+                    information.Write("Built probability tree from " + bfa.GetSolutionCount() + " solutions in " + bfa.GetNodeCount() + " steps");
+                    SolverAction move = bfa.GetNextMove();
+                    if (move != null) {
+                        information.Write("Brute Force Analysis: " + move.AsText());
+                        actions.Add(move);
+                        return BuildActionHeader(information, actions);
+                    } else {
+                        information.Write("Brute Force Analysis: no move found!");
+                    }
+                }
+
+                //var bfda = new BruteForceAnalysis(bruteForce.allSolutions, iterator.tiles, 1000);  // the tiles and the solutions need to be in sync
+
+            }
+
 
             if (guesses.Count == 0) {  // find an off edge guess
                 if (offEdgeTilesLeft > 0) {
@@ -178,6 +242,7 @@ namespace MinesweeperSolver {
 
             HashSet<SolverTile> dead = information.GetDeadTiles();
 
+            // add any dead tiles to the list of actions
             List<SolverAction> deadList = new List<SolverAction>();
             foreach (SolverTile dt in dead) {
                 deadList.Add(new SolverAction(dt, ActionType.Dead, 1));

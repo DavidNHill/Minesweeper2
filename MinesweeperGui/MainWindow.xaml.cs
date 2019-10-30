@@ -18,7 +18,7 @@ namespace MinesweeperGui {
     public partial class MainWindow : Window
     {
 
-        private readonly bool verbose = false;  // determines whether diagnostic info gets written to the console
+        private readonly bool verbose = true;  // determines whether diagnostic info gets written to the console
 
         private readonly ImageSource Hidden;
         private readonly ImageSource[] MineValue = new ImageSource[9];
@@ -228,7 +228,8 @@ namespace MinesweeperGui {
                 }
             }
 
-            game = new MinesweeperGame(gameDescription, seed);
+            //game = new MinesweeperGame(gameDescription, seed);
+            game = new MinesweeperGame(gameDescription, seed, (hardcore.IsChecked == true));
             solverInfo = new SolverInfo(gameDescription, verbose);
 
             RenderMinesLeft();
@@ -599,8 +600,10 @@ namespace MinesweeperGui {
             if (e.ChangedButton == MouseButton.Left) {
                 if (tile == null || tile.resultType == ResultType.Hidden) {
                     actionType = ActionType.Clear;
-                } else {
+                } else if (tile.resultType == ResultType.Cleared) {
                     actionType = ActionType.Chord;
+                } else {
+                    return;
                 }
 
             } else if (e.ChangedButton == MouseButton.Right) {
