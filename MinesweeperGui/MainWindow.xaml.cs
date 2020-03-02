@@ -131,7 +131,7 @@ namespace MinesweeperGui {
         }
 
 
-        // this method runs on a different thread. gameNumber can be changed by clicking chosing a new game from the UI thread.
+        // this method runs on a different thread. gameNumber is changed by clicking chosing a new game from the UI thread.
         private void AutoPlayRunner() {
 
             Dispatcher.Invoke(() => gameCanvas.Cursor = Cursors.Wait);
@@ -163,6 +163,12 @@ namespace MinesweeperGui {
 
                 solverInfo.AddInformation(result);  // let the solver know what has happened
 
+                // nothing more to do if we have won or lost
+                if (result.status == GameStatus.Lost || result.status == GameStatus.Won) {
+                    Dispatcher.Invoke(() => DisplayFinalOutcome(result));
+                    break;
+                }
+
                 solverActions = SolverMain.FindActions(solverInfo);   // pass the solver info into the solver and see what it comes up with
 
                 //foreach (SolverAction action in solverActions) {
@@ -177,7 +183,7 @@ namespace MinesweeperGui {
                     break;
                 }
                 //Utility.Write("After RenderHints took " + (DateTime.Now.Ticks - start) + " ticks");
-                Utility.Write("Tiles remaining " + solverInfo.GetTilesLeft() + ", excluded " + solverInfo.GetExcludedTiles().Count);
+                Utility.Write("Tiles remaining " + solverInfo.GetTilesLeft());
 
                 long end = DateTime.Now.Ticks;
 
@@ -328,11 +334,37 @@ namespace MinesweeperGui {
 
             solverInfo.AddInformation(result);  // let the solver know what has happened
 
-            // if we are showing hints or auto playing then get the hints
-            if (useSolver || autoRunning) {
-                AutoPlay();  // let the solver playout the moves
+            if (result.status == GameStatus.Lost) {
+                MessageLine.Content = "The game is lost!";
+            } else if (result.status == GameStatus.Won) {
+                if (game.GetDeaths() != 0) {
+                    MessageLine.Content = "The game is won with " + game.GetDeaths() + " deaths";
+                } else {
+                    MessageLine.Content = "The game is won";
+                }
+                   
+            } else {
+                // if we are showing hints or auto playing then get the hints
+                if (useSolver || autoRunning) {
+                    AutoPlay();  // let the solver playout the moves
+                }
             }
  
+        }
+
+        private void DisplayFinalOutcome(GameResult result) {
+
+            if (result.status == GameStatus.Lost) {
+                MessageLine.Content = "The game is lost!";
+            } else if (result.status == GameStatus.Won) {
+                if (this.game.GetDeaths() != 0) {
+                    MessageLine.Content = "The game is won with " + game.GetDeaths() + " deaths";
+                } else {
+                    MessageLine.Content = "The game is won";
+                }
+
+            }
+
         }
 
         private bool IsAutoPlayValid() {
@@ -426,17 +458,19 @@ namespace MinesweeperGui {
             int offSetTop = tileSize * (boardHeight + 1);
 
             jumpTo = null;
-            if (solverActions.solverActions.Count == 0) {
-                MessageLine.Content = "The solver has no suggestions!";
-            } else if (solverActions.solverActions.Count > 1) {
-                MessageLine.Content = "The solver has found " + solverActions.solverActions.Count + " moves.";
-            } else if (solverActions.solverActions[0].safeProbability > 0 && solverActions.solverActions[0].safeProbability < 1) {
-                MessageLine.Content = "The solver suggests guessing " + solverActions.solverActions[0].AsText();
-                jumpTo = solverActions.solverActions[0];
-            } else {
-                MessageLine.Content = "The solver has found 1 move.";
+            if (this.game.GetGameStatus() == GameStatus.InPlay) {
+                if (solverActions.solverActions.Count == 0) {
+                    MessageLine.Content = "The solver has no suggestions!";
+                } else if (solverActions.solverActions.Count > 1) {
+                    MessageLine.Content = "The solver has found " + solverActions.solverActions.Count + " moves.";
+                } else if (solverActions.solverActions[0].safeProbability > 0 && solverActions.solverActions[0].safeProbability < 1) {
+                    MessageLine.Content = "The solver suggests guessing " + solverActions.solverActions[0].AsText();
+                    jumpTo = solverActions.solverActions[0];
+                } else {
+                    MessageLine.Content = "The solver has found 1 move.";
+                }
             }
-
+ 
             foreach (SolverAction ar in solverActions.solverActions) {
 
                 int boardX = ar.x - topX;
@@ -460,12 +494,7 @@ namespace MinesweeperGui {
                         if (ar.safeProbability == 1) {
                             fill = Color.FromArgb(128, 0, 255, 0);  // green if safe
                         } else if (ar.isDead) {
-                            if (ar.isExcluded) {
-                                fill = Color.FromArgb(128, 165, 42, 42);    // if dead
-                            } else {
-                                fill = Color.FromArgb(128, 0, 0, 0);    // black if excluded
-                            }
-                            
+                            fill = Color.FromArgb(128, 0, 0, 0);    // black if excluded
                         } else {
                             fill = Color.FromArgb(128, 255, 165, 0);  // orange if not safe
                         }

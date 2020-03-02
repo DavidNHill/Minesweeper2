@@ -113,6 +113,14 @@ namespace MinesweeperControl {
             return minesLeft;
         }
 
+        public int GetDeaths() {
+            return deaths;
+        }
+
+        public GameStatus GetGameStatus() {
+            return this.gameStatus;
+        }
+
         public GameResult ProcessActions<T>(IList<T> actions) where T : GameAction {   // accept any Array of classes extending GameAction
 
             //long start = DateTime.Now.Ticks;

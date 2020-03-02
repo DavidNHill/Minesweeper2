@@ -7,6 +7,8 @@ namespace MinesweeperSolver {
 
     public class SolverInfo {
 
+        private static readonly bool EXCLUDE_ON = false;
+
         // contains information about what surrounds a tile
         public class AdjacentInfo {
 
@@ -32,6 +34,7 @@ namespace MinesweeperSolver {
         private int tilesLeft;
 
         private ProbabilityEngine probabilityEngine = null;  // this is the probability engine from the last solver run
+        private BruteForceAnalysis bfa = null;  // this is the brute force analysis from the last solver run
 
         private readonly HashSet<SolverTile> livingWitnesses = new HashSet<SolverTile>(20);   // this is a set of tiles which are clear and have hidden neighbours.
         private readonly HashSet<SolverTile> knownMines;   // this is a set of tiles which are known to be mines.
@@ -39,9 +42,9 @@ namespace MinesweeperSolver {
 
 
         private readonly HashSet<SolverTile> deadTiles = new HashSet<SolverTile>();   // this is a set of tiles which are known to be dead.
-        private readonly HashSet<SolverTile> excludedWitnesses = new HashSet<SolverTile>();   // this is a set of witnesses which no longer influence the solving of the game.
-        private readonly HashSet<SolverTile> excludedTiles = new HashSet<SolverTile>();   // this is a set of tiles which no longer influence the solving of the game.
-        private int excludedMinesCount = 0; // number of mines which are with the exluded tiles area
+        //private readonly HashSet<SolverTile> excludedWitnesses = new HashSet<SolverTile>();   // this is a set of witnesses which no longer influence the solving of the game.
+        //private readonly HashSet<SolverTile> excludedTiles = new HashSet<SolverTile>();   // this is a set of tiles which no longer influence the solving of the game.
+        //private int excludedMinesCount = 0; // number of mines which are with the exluded tiles area
  
 
         private readonly List<SolverTile> newClears = new List<SolverTile>();
@@ -91,9 +94,9 @@ namespace MinesweeperSolver {
                     if (tile.IsDead()) {
                         deadTiles.Remove(tile);
                     }
-                    if (tile.IsExcluded()) {
-                        excludedTiles.Remove(tile);
-                    }
+                    //if (tile.IsExcluded()) {
+                    //    excludedTiles.Remove(tile);
+                    //}
                     //pendingClears.Remove(tile);
 
                 } else if (ar.resultType == ResultType.Flagged) {
@@ -104,6 +107,7 @@ namespace MinesweeperSolver {
                     SolverTile tile = tiles[ar.x, ar.y];
                     tile.SetFlagged(false);
                     MineFound(tile);
+                    this.bfa = null;   // can't walk the bfa tree if we've trodden on a mine
                 }
 
             }
@@ -130,7 +134,7 @@ namespace MinesweeperSolver {
                     if (adjInfo.excluded != adjInfo.hidden) {
                         livingWitnesses.Add(newTile);
                     } else {
-                        excludedWitnesses.Add(newTile);
+                        //excludedWitnesses.Add(newTile);
                     }
                     
                 }
@@ -151,7 +155,7 @@ namespace MinesweeperSolver {
         // sets the tile as a mine, stores it for future use and returns true if it is currently flagged
         public bool MineFound(SolverTile tile) {
 
-            // if this is already known to be mine then noting to do
+            // if this is already known to be mine then nothing to do
             if (tile.IsMine()) {
                 return tile.IsFlagged();
             }
@@ -165,16 +169,21 @@ namespace MinesweeperSolver {
             if (tile.IsDead()) {
                 deadTiles.Remove(tile);  // remove the tile if it was on the dead list
             }
-            if (tile.IsExcluded()) {
-                excludedTiles.Remove(tile); // remove the tile if it was excluded
-                excludedMinesCount--;
-            }
+            //if (tile.IsExcluded()) {
+            //    excludedTiles.Remove(tile); // remove the tile if it was excluded
+            //   excludedMinesCount--;
+            //}
 
             return tile.IsFlagged();
 
         }
 
         public void SetTileToDead(SolverTile tile) {
+
+            if (tile.IsMine()) {
+                Write("ERROR: Trying to set a mine tile to dead " + tile.AsText());
+                return;
+            }
 
             tile.SetDead(key);    // mark it
             deadTiles.Add(tile);  //  and add to the set
@@ -185,7 +194,13 @@ namespace MinesweeperSolver {
             return deadTiles;
         }
 
+        /*
         public void ExcludeMines(int n) {
+
+            if (!EXCLUDE_ON) {
+                return;
+            }
+
             this.excludedMinesCount = this.excludedMinesCount + n;
         }
 
@@ -194,6 +209,11 @@ namespace MinesweeperSolver {
         }
 
         public void ExcludeTile(SolverTile tile) {
+
+            if (!EXCLUDE_ON) {
+                return;
+            }
+
             tile.SetExcluded();
             excludedTiles.Add(tile);
         }
@@ -206,14 +226,28 @@ namespace MinesweeperSolver {
         /// Move a tile from the list of witnesses to the list of excluded witnesses
         /// </summary>
         public void ExcludeWitness(SolverTile tile) {
+
+            if (!EXCLUDE_ON) {
+                return;
+            }
+
             tile.SetExcluded();
-             if (livingWitnesses.Remove(tile)) {
+            if (livingWitnesses.Remove(tile)) {
                 excludedWitnesses.Add(tile);
             }
         }
 
         public HashSet<SolverTile> GetExcludedWitnesses() {
             return this.excludedWitnesses;
+        }
+        */
+
+        public void SetBruteForceAnalysis(BruteForceAnalysis bfa) {
+            this.bfa = bfa;
+        }
+
+        public BruteForceAnalysis GetBruteForceAnalysis() {
+            return this.bfa;
         }
 
         public void SetProbabilityEngine(ProbabilityEngine pe) {
@@ -240,9 +274,9 @@ namespace MinesweeperSolver {
                 return -1;
             }
 
-            if (tile.IsExcluded()) {
-                return -1;
-            }
+            //if (tile.IsExcluded()) {
+            //    return -1;
+            //}
 
             if (probabilityEngine != null) {
                 return probabilityEngine.GetProbability(tile);
@@ -309,9 +343,9 @@ namespace MinesweeperSolver {
                     mines++;
                 } else if (adjTile.IsHidden() ) {
                     hidden++;
-                    if (adjTile.IsExcluded()) {
-                        excluded++;
-                    }
+                    //if (adjTile.IsExcluded()) {
+                    //    excluded++;
+                    //}
                 }
             }
 

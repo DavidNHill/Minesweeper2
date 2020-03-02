@@ -1,12 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Security.Permissions;
 using static MinesweeperControl.MinesweeperGame;
 
 namespace MinesweeperSolver {
     public class ProbabilityEngine {
 
+        public enum Outcome { COMPLETED, DEAD_EDGE, LOCAL_CLEARS, ISOLATED_EDGE};
+
         private readonly int[][] SMALL_COMBINATIONS = new int[][] { new int[] { 1 }, new int[] { 1, 1 }, new int[] { 1, 2, 1 }, new int[] { 1, 3, 3, 1 }, new int[] { 1, 4, 6, 4, 1 }, new int[] { 1, 5, 10, 10, 5, 1 }, new int[] { 1, 6, 15, 20, 15, 6, 1 }, new int[] { 1, 7, 21, 35, 35, 21, 7, 1 }, new int[] { 1, 8, 28, 56, 70, 56, 28, 8, 1 } };
+
+        private Outcome outcome;
 
         private readonly List<SolverTile> witnessed;
         private readonly List<BoxWitness> prunedWitnesses = new List<BoxWitness>();  // a subset of allWitnesses with equivalent witnesses removed
@@ -27,10 +32,16 @@ namespace MinesweeperSolver {
         private List<BoxWitness> dependentWitnesses = new List<BoxWitness>();
         private int independentMines;
         private BigInteger independentIterations = 1;
-        private int remainingSquares = 0;
+        private int independentTiles = 0;
 
         // local clears which means we can stop the probability engine early
         private readonly List<SolverTile> localClears = new List<SolverTile>();
+        private readonly List<SolverTile> minesFound = new List<SolverTile>();
+
+        private readonly List<SolverTile> deadEdge = new List<SolverTile>();
+        private BigInteger deadEdgeSolutionCount;
+
+        private Cruncher isolatedEdgeCruncher;
 
         private int minesLeft;
         private int tilesLeft;
@@ -201,11 +212,10 @@ namespace MinesweeperSolver {
 
             }
 
-            // if we don't have any local clears then do a full probability determination
-            if (this.localClears.Count == 0) {
+            // if we have completed the whole thing then calculate the probabilities
+            if (this.outcome == Outcome.COMPLETED) {
                 CalculateBoxProbabilities();
             }
-
 
         }
 
@@ -334,12 +344,6 @@ namespace MinesweeperSolver {
             result.SetMineCount(pl.GetMineCount() + mines);
             //result.solutionCount = pl.solutionCount;
 
-            // copy the probability array
-
-            //for (var i = 0; i < pl.mineBoxCount.length; i++) {
-            //    result.mineBoxCount[i] = pl.mineBoxCount[i];
-            //}
-
             result.CopyMineBoxCount(pl);
 
             result.SetMineBoxCount(newBox.GetUID(), new BigInteger(mines));
@@ -352,11 +356,11 @@ namespace MinesweeperSolver {
         // here we store the information we have found about this independent edge for later use
         private void StoreProbabilities() {
 
-            List<ProbabilityLine> crunched = CrunchByMineCount(this.workingProbs);
+            List<ProbabilityLine>  crunched = new List<ProbabilityLine>(this.workingProbs);
 
-            //Console.WriteLine("Edge has " + crunched.Count + " probability lines after consolidation");
+            EdgeStore edge = new EdgeStore(crunched, this.mask);
 
-            edgeStore.Add(new EdgeStore(crunched, this.mask));  // store the existing data 
+            edgeStore.Add(edge); ;  // store the existing data 
 
             workingProbs.Clear();  // and get a new list for the next independent edge
 
@@ -366,50 +370,98 @@ namespace MinesweeperSolver {
             if (crunched.Count == 1) {   // if the edge has the same number of mines for every possible solution
 
                 bool edgeDead = true;
+                deadEdgeSolutionCount = crunched[0].GetSolutionCount();
                 for (int i = 0; i < this.mask.Length; i++) {
-                    if (this.mask[i] && !boxes[i].IsDead()) {   // if any of the boxes on this edge is not dead then the edge isn't dead
-                        edgeDead = false;
-                    }
-                }
-
-                if (edgeDead) {
-                    information.Write("Dead edge found");
-                    information.ExcludeMines(crunched[0].GetMineCount());
-
-                    for (int i = 0; i < this.mask.Length; i++) {
-                        if (this.mask[i]) {
-                            foreach (BoxWitness bw in boxes[i].GetBoxWitnesses()) {   // exclude the witnesses
-                                information.ExcludeWitness(bw.GetTile());
-
-                            }
-
-                            foreach (SolverTile tile in boxes[i].GetTiles()) {  // exclude the tiles
-                                information.ExcludeTile(tile);
+                    if (this.mask[i]) {   // if any of the boxes on this edge is not dead then the edge isn't dead
+                        foreach (SolverTile tile in boxes[i].GetTiles()) {
+                            if (!tile.IsDead()) {
+                                edgeDead = false;
+                                break;
                             }
                         }
-                    }
-
-                    //information.ExcludedTilesCount(sizeExcluded);
-                    information.Write("Excluding " + crunched[0].GetMineCount() + " mines");
+                        if (!edgeDead) {
+                            break;
+                        }
+                     }
                 }
 
+                // if the edge is dead add all the tiles in to a list to be used later
+                if (edgeDead) {
+                    information.Write("Dead edge found with " + deadEdgeSolutionCount + " solutions");
+                    for (int i = 0; i < this.mask.Length; i++) {
+                        if (this.mask[i]) {
+                            deadEdge.AddRange(boxes[i].GetTiles());
+                        }
+                    }
+                } else {
+                    // no point checking if it is too large to process
+                    if (deadEdgeSolutionCount <= SolverMain.MAX_BFDA_SOLUTIONS) {
+                        CheckEdgeIsIsolated(crunched[0]);
+                    }
+                }
             }
 
 
             this.mask = new bool[boxes.Count];
-            //int inEdge = 0;
-            // reset the mask indicating that no boxes have been processed 
-            //for (int i = 0; i < this.mask.Length; i++) {
-            //    if (this.mask[i]) {
-            //        inEdge++;
-            //    }
-            //    this.mask[i] = false;
-            //}
-            //if (inEdge == 0) {
-            //    Console.WriteLine("Edge has no witnesses processed !!");
-            //}
 
+        }
 
+        // an edge is isolated if every tile on it is completely surrounded by boxes also on the same edge
+        private bool CheckEdgeIsIsolated(ProbabilityLine probabilityLine) {
+
+            HashSet<SolverTile> edgeTiles = new HashSet<SolverTile>();
+            HashSet<BoxWitness> edgeWitnesses = new HashSet<BoxWitness>();
+
+            bool everything = true;
+
+            // load each tile on this edge into a set
+            for (int i = 0; i < this.mask.Length; i++) {
+                if (this.mask[i]) {
+                    edgeTiles.UnionWith(boxes[i].GetTiles());
+                    edgeWitnesses.UnionWith(boxes[i].GetBoxWitnesses());
+                } else {
+                    everything = false;
+                }
+            }
+
+            // if this edge is everything then it isn't an isolated edge
+            if (everything) {
+                return false;
+            }
+
+            // check whether every tile adjacent to the tiles on the edge is itself on the edge
+            List<SolverTile> adjTiles = new List<SolverTile>();
+            for (int i = 0; i < this.mask.Length; i++) {
+                if (this.mask[i]) {
+                    foreach (SolverTile tile in boxes[i].GetTiles()) {
+                        adjTiles.Clear();
+                        foreach (SolverTile adjTile in information.GetAdjacentTiles(tile)) {
+                            if (adjTile.IsHidden()) {
+                                if (!edgeTiles.Contains(adjTile)) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            information.Write("*** Isolated Edge found ***");
+
+            List<SolverTile> tiles = new List<SolverTile>(edgeTiles);
+            List<BoxWitness> witnesses = new List<BoxWitness>(edgeWitnesses);
+            int mines = probabilityLine.GetMineCount();
+
+            //SequentialIterator iterator = new SequentialIterator(mines, tiles.Count);
+            WitnessWebIterator iterator = new WitnessWebIterator(information, null, witnesses, tiles, mines, tiles.Count, -1);
+
+            BruteForceAnalysis bfa = new BruteForceAnalysis(information, tiles, 1000000, null);
+
+            Cruncher cruncher = new Cruncher(information, iterator, witnesses, bfa);
+
+            this.isolatedEdgeCruncher = cruncher;
+
+            return true;
         }
 
         // this combines newly generated probabilities with ones we have already stored from other independent sets of witnesses
@@ -566,9 +618,9 @@ namespace MinesweeperSolver {
 
         private List<ProbabilityLine> CrunchByMineCount(List<ProbabilityLine> target) {
 
-            //if (target.Count == 0) {
-            //    return target;
-            //}
+            if (target.Count == 0) {
+                return target;
+            }
 
             // sort the solutions by number of mines
             target.Sort();
@@ -630,7 +682,7 @@ namespace MinesweeperSolver {
 
             BoxWitness excluded = null;
             foreach (BoxWitness boxWit in this.boxWitnesses) {
-                if (!boxWit.IsProcessed() && !boxWit.GetTile().IsExcluded()) {
+                if (!boxWit.IsProcessed()) {
                     return new NextWitness(boxWit);
                 } else if (!boxWit.IsProcessed()) {
                     excluded = boxWit;
@@ -681,19 +733,23 @@ namespace MinesweeperSolver {
             if (bestWitness != null) {
                 return new NextWitness(bestWitness);
             } else {
-                information.Write("Ending independent edge");
+                 information.Write("Ending independent edge with " + workingProbs.Count + " solution lines");
             }
 
             //Console.WriteLine("Edge has " + this.workingProbs.Count + " probability lines");
-            // if we are down here then there is no witness which is on the boundary, so we have processed a complete set of independent witnesses 
+            //if we are down here then there is no witness which is on the boundary, so we have processed a complete set of independent witnesses 
 
             //information.Write("Considering " + this.workingProbs.Count + " probability lines");
             //foreach (ProbabilityLine wp in this.workingProbs) {
-            //    information.Write("Probability line has " + wp.GetMineCount() + "mines and " + wp.GetSolutionCount() + " solutions");
+            //    information.Write("Probability line has " + wp.GetMineCount() + " mines and " + wp.GetSolutionCount() + " solutions");
             //}
 
             // see if any of the tiles on this independent edge are dead
             CheckCandidateDeadLocations();
+
+            // reduce the edge by sorting and consolidating by mine count
+            this.workingProbs = CrunchByMineCount(this.workingProbs);
+            information.Write("Independent edge reduced to " + workingProbs.Count + " solution lines");
 
             // look to see if this sub-section of the edge has any certain clears
             for (int i = 0; i < this.mask.Length; i++) {
@@ -710,14 +766,11 @@ namespace MinesweeperSolver {
                     if (isClear) {
                         // if the box is locally clear then store the tiles in it
                         foreach (SolverTile tile in this.boxes[i].GetTiles()) {
-
                             information.Write(tile.AsText() + " has been determined locally to be clear");
-                            //tile.setProbability(1);
                             this.localClears.Add(tile);
                         }
                     }
 
-                    /*
                     bool isFlag = true;
                     foreach (ProbabilityLine wp in this.workingProbs) {
                        if (wp.GetMineBoxCount(i) != wp.GetSolutionCount() * this.boxes[i].GetTiles().Count) {
@@ -727,20 +780,20 @@ namespace MinesweeperSolver {
                     }
                     if (isFlag) {
                         foreach (SolverTile tile in this.boxes[i].GetTiles()) {
-                            SolverMain.Write(tile.AsText() + " has been determined locally to be a mine");
-                            //tile.setProbability(1);
-                            //this.localClears.Add(tile);
+                            information.Write(tile.AsText() + " has been determined locally to be a mine");
+                            minesFound.Add(tile);
+                            //information.MineFound(tile);
                         }
                     }
-                    */
-                }
+                 }
 
             }
 
             // if we have found some local clears then stop and use these
             if (this.localClears.Count > 0) {
+                this.outcome = Outcome.LOCAL_CLEARS;
                 information.Write(this.localClears.Count + " Local clears have been found");
-                //return null;
+                return null;
             }
 
             //independentGroups++;
@@ -749,6 +802,14 @@ namespace MinesweeperSolver {
 
             // store the details for this edge
             StoreProbabilities();
+            if (deadEdge.Count != 0) {
+                this.outcome = Outcome.DEAD_EDGE;
+                return null;
+            }
+            if (this.isolatedEdgeCruncher != null) {
+                this.outcome = Outcome.ISOLATED_EDGE;
+                return null;
+            }
 
 
             // get an unprocessed witness
@@ -761,10 +822,10 @@ namespace MinesweeperSolver {
             if (nw == null) {
 
                 // if we have found some local clears then stop and use these
-                if (this.localClears.Count > 0) {
-                    information.Write("In total " + this.localClears.Count + " Local clears have been found");
-                    return null;
-                }
+                //if (this.localClears.Count > 0) {
+                //    information.Write("In total " + this.localClears.Count + " Local clears have been found");
+                //    return null;
+                //}
 
                 edgeStore.Sort(EdgeStore.SortByLineCount);
 
@@ -776,7 +837,7 @@ namespace MinesweeperSolver {
                     CombineProbabilities();
                 }
                 information.Write("Combined all edges in " + (DateTime.Now.Ticks - start) + " ticks");
-
+                this.outcome = Outcome.COMPLETED;
             }
 
             // return the next witness to process
@@ -1038,8 +1099,16 @@ namespace MinesweeperSolver {
                     // all the bad boxes must be zero
                     foreach (Box b in dc.GetBadBoxes()) {
 
-                        if (pl.GetMineBoxCount(b.GetUID()) != 0) {
-                            information.Write("Location " + dc.GetCandidate().AsText() + " is not dead because a bad box is non-zero");
+                        int requiredMines;
+                        if (b.GetUID() == dc.GetMyBox().GetUID()) {
+                            requiredMines = b.GetTiles().Count - 1;
+                        } else {
+                            requiredMines = b.GetTiles().Count;
+                        }
+
+                        if (pl.GetMineBoxCount(b.GetUID()) != 0 && pl.GetMineBoxCount(b.GetUID()) != requiredMines) {
+                        //if (pl.GetMineBoxCount(b.GetUID()) != 0) {
+                            information.Write("Location " + dc.GetCandidate().AsText() + " is not dead because a bad box is neither empty nor full of mines");
                             okay = false;
                             break;
                         }
@@ -1062,9 +1131,10 @@ namespace MinesweeperSolver {
                         okay = false;
                         break;
                     }
+
                 }
 
-                // if a check failed or every this tile is a mine for every solution then it is alive
+                // if a check failed or this tile is a mine for every solution then it is alive
                 if (!okay || mineCount == this.workingProbs.Count) {
                     dc.SetAlive();
                 } else {
@@ -1115,7 +1185,12 @@ namespace MinesweeperSolver {
 
                 }
 
-                this.deadCandidates.Add(dc);
+                if (dc.GetGoodBoxes().Count == 0 && dc.GetBadBoxes().Count == 0) {
+                    information.SetTileToDead(tile);   // set the tile as dead. A dead tile can never be resurrected.
+                } else {
+                    this.deadCandidates.Add(dc);
+                }
+ 
 
             }
 
@@ -1181,16 +1256,16 @@ namespace MinesweeperSolver {
         // determine a set of independent witnesses which can be used to brute force the solution space more efficiently then a basic 'pick r from n' 
         public void GenerateIndependentWitnesses() {
 
-            this.remainingSquares = this.witnessed.Count;
+            this.independentTiles = 0;
 
             // find a set of witnesses which don't share any squares (there can be many of these, but we just want one to use with the brute force iterator)
             foreach (BoxWitness w in this.prunedWitnesses) {
 
                 //console.log("Checking witness " + w.tile.asText() + " for independence");
-                if (w.GetTile().IsExcluded()) {
-                    //information.Write("Witness " + w.GetTile().AsText() + " is excluded");
-                    continue;  // don't process excluded witnesses
-                }
+                //if (w.GetTile().IsExcluded()) {
+                //    //information.Write("Witness " + w.GetTile().AsText() + " is excluded");
+                //    continue;  // don't process excluded witnesses
+                //}
 
                 bool okay = true;
                 foreach (BoxWitness iw in this.independentWitnesses) {
@@ -1204,7 +1279,7 @@ namespace MinesweeperSolver {
                 // split the witnesses into dependent ones and independent ones 
                 if (okay) {
                     information.Write(w.GetTile().AsText() + " is independent witness");
-                    this.remainingSquares = this.remainingSquares - w.GetAdjacentTiles().Count;
+                    this.independentTiles = this.independentTiles + w.GetAdjacentTiles().Count;
                     this.independentIterations = this.independentIterations * SolverMain.Calculate(w.GetMinesToFind(), w.GetAdjacentTiles().Count);
                     this.independentMines = this.independentMines + w.GetMinesToFind();
                     this.independentWitnesses.Add(w);
@@ -1281,20 +1356,18 @@ namespace MinesweeperSolver {
             }
 
             // for each box calcaulate a probability
+            minesFound.Clear();  // clear down any mines we have found locally as we'll find them again here
             for (int i = 0; i < this.boxes.Count; i++) {
 
                 if (totalTally != 0) {
                     if (tally[i] == totalTally) {  // a mine
                         information.Write("Box " + i + " contains all mines");
-                        //foreach (SolverTile tile in boxes[i].GetTiles()) {
-                        //    information.MineFound(tile);
-                        //}
+                        foreach (SolverTile tile in boxes[i].GetTiles()) {
+                            minesFound.Add(tile);
+                            //information.MineFound(tile);
+                        }
                         boxes[i].SetProbability(0);
-                        //this.boxProb[i] = 0;
-                        //for (Square squ: boxes.get(i).getSquares()) {  // add the squares in the box to the list of mines
-                        //   mines.add(squ);
-                        //}
-                    } else {
+                     } else {
                         //this.boxProb[i] = 1 - Combination.DivideBigIntegerToDouble(tally[i], totalTally, 6);
                         boxes[i].SetProbability(1 - Combination.DivideBigIntegerToDouble(tally[i], totalTally, 6));
                     }
@@ -1305,27 +1378,8 @@ namespace MinesweeperSolver {
                     //this.boxProb[i] = 0;
                 }
 
-                //console.log("Box " + i + " has probabality " + this.boxProb[i]);
-
-                // this is needed for tool tips
-                // for each tile in the box allocate a probability to it
-                //foreach (SolverTile tile in this.boxes[i].GetTiles()) {
-                //    tile.SetProbability(this.boxProb[i]);
-                //}
-
             }
 
-
-            // add the dead locations we found
-            /*
-            foreach (DeadCandidate dc in this.deadCandidates) {
-                if (!dc.IsAlive() && dc.GetMyBox().GetProbability() != 0) {   // if it is dead and not a definite flag 
-                        information.Write(dc.GetCandidate().AsText() + " is dead");
-                    //this.deadTiles.Add(dc.GetCandidate());
-                    information.SetTileToDead(dc.GetCandidate());   // set the tile as dead. A dead tile can never be resurrected.
-                }
-            }
-            */
 
             /*
             for (int i = 0; i < hashTally.length; i++) {
@@ -1471,6 +1525,11 @@ namespace MinesweeperSolver {
 
         }
 
+        public Outcome GetOutcome() {
+            return this.outcome;
+        }
+
+
         // probability that any square off the edge is a mine
         public double GetOffEdgeProbability() {
             return this.offEdgeProbability;
@@ -1499,9 +1558,14 @@ namespace MinesweeperSolver {
             return this.bestEdgeProbability;
         }
 
-        // returns an array of 'SolverTile' which are clear based on analysis of their independent edge only
+        // returns a list of tiles that are clears found by local analysis
         public List<SolverTile> GetLocalClears() {
             return this.localClears;
+        }
+
+        // returns a list of tiles which are mines
+        public List<SolverTile> GetMinesFound() {
+            return this.minesFound;
         }
 
         public bool getTruncated() {
@@ -1516,8 +1580,39 @@ namespace MinesweeperSolver {
             return this.dependentWitnesses;
         }
 
+        public BigInteger GetIndependentIterations() {
+            return this.independentIterations;
+        }
+
+     
+        public int GetIndependentTiles() {
+            return this.independentTiles;
+        }
+
+        public int GetIndependentMines() {
+            return this.independentMines;
+        }
+
         public SolverInfo GetSolverInfo() {
             return this.information;
+        }
+
+        /*
+        *  returns the dead edge if there is one
+        */
+        public List<SolverTile> GetDeadEdge() {
+            return deadEdge;
+        }
+
+        public BigInteger GetDeadEdgeSolutionCount() {
+            return this.deadEdgeSolutionCount;
+        }
+
+        /*
+        *  returns the isolated edge if there is one 
+        */
+        public Cruncher getIsolatedEdgeCruncher() {
+            return isolatedEdgeCruncher;
         }
 
     }
@@ -1599,7 +1694,7 @@ namespace MinesweeperSolver {
 
             this.boxWitness = boxWitness;
 
-            boxWitness.GetTile().SetExamined();   // set this tile as now longer new growth
+            //boxWitness.GetTile().SetExamined();   // set this tile as now longer new growth
 
             foreach (Box box in this.boxWitness.GetBoxes()) {
 
@@ -1665,9 +1760,9 @@ namespace MinesweeperSolver {
             this.processed = processed;
         }
 
-        public bool HasNewGrowth() {
-            return tile.IsNewGrowth();
-        }
+        //public bool HasNewGrowth() {
+        //    return tile.IsNewGrowth();
+        //}
 
         // gets the tile which is the witness
         public SolverTile GetTile() {
@@ -1823,7 +1918,7 @@ namespace MinesweeperSolver {
         private readonly int uid;
         private int minMines;
         private int maxMines;
-        private bool dead = true;    // a box is dead if all its tiles are dead
+        //private bool dead = true;    // a box is dead if all its tiles are dead
 
         private double safeProbability;
 
@@ -1837,9 +1932,9 @@ namespace MinesweeperSolver {
 
             this.tiles.Add(tile);
 
-            if (!tile.IsDead()) {
-                dead = false;
-            }
+            //if (!tile.IsDead()) {
+            //    dead = false;
+            //}
 
             foreach (BoxWitness bw in boxWitnesses) {
                 if (tile.IsAdjacent(bw.GetTile())) {
@@ -1889,9 +1984,9 @@ namespace MinesweeperSolver {
             this.safeProbability = probability;
         }
 
-        public bool IsDead() {
-            return this.dead;
-        }
+        //public bool IsDead() {
+        //    return this.dead;
+        //}
 
         // if the tiles surrounding witnesses equal the boxes then it fits
         public bool Fits(SolverTile tile, int count) {
@@ -1932,9 +2027,9 @@ namespace MinesweeperSolver {
         // add a new tile to the box
         public void Add(SolverTile tile) {
             this.tiles.Add(tile);
-            if (!tile.IsDead()) {
-                dead = false;
-            }
+            //if (!tile.IsDead()) {
+            //    dead = false;
+            //}
         }
 
         public bool Contains(SolverTile tile) {

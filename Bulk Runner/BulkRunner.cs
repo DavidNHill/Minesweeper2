@@ -11,12 +11,15 @@ namespace Bulk_Runner {
     class BulkRunner {
 
         private static readonly bool pauseOnWin = false;
+        private static readonly bool playUntilWin = false;
         private static GameAction[] firstPlay;
+
+        private static int[] deathTable = new int[50]; 
 
         static void Main(string[] args) {
 
             GameDescription description = GameDescription.EXPERT_SAFE;
-            //GameDescription description = new GameDescription(1000, 1000, 150000, GameType.Zero);
+            //GameDescription description = new GameDescription(30, 24, 225, GameType.Safe);
             //GameDescription description = new GameDescription(100, 100, 1500, GameType.Zero);
             //GameDescription description = new GameDescription(50, 50, 500, GameType.Safe);
             //GameDescription description = new GameDescription(8, 8, 34, GameType.Safe);
@@ -27,16 +30,17 @@ namespace Bulk_Runner {
                 firstPlay = new GameAction[] { new GameAction(0, 0, ActionType.Clear) };
             }
 
-            //int seedGen = new Random().Next();
-            int seedGen = 19680503;
+            int seedGen = new Random().Next();
+            //int seedGen = 1104105816;
 
             Random rng = new Random(seedGen);
 
-            int run = 50000;
-            int steps = 10;
+            int run = 100000;
+            int steps = 100;
 
             int won = 0;
             int lost = 0;
+            int deaths = 0;
 
             SolverMain.Initialise();
 
@@ -51,11 +55,21 @@ namespace Bulk_Runner {
 
                 int seed = rng.Next();
 
-                MinesweeperGame game = new MinesweeperGame(description, seed);
+                MinesweeperGame game = new MinesweeperGame(description, seed, !playUntilWin);
 
-                Write("Seed " + game.seed + " starting");
+                //Write("Seed " + game.seed + " starting");
 
                 GameStatus status = AutoPlayRunner(game);
+
+                int died = game.GetDeaths();
+                if (died < deathTable.Length) {
+                    deathTable[died]++;
+                } else {
+                    deathTable[deathTable.Length - 1]++;
+                }
+
+
+                deaths = deaths + died;
 
                 if (status == GameStatus.Lost) {
                     lost++;
@@ -84,6 +98,13 @@ namespace Bulk_Runner {
             double winRate = (won * 10000 / run) / 100d;
 
             Write("Win rate " + winRate + "%");
+
+            Write("Deaths " + deaths + " average deaths per game " + (deaths * 1000 / run) / 1000d);
+
+            for (int i=0; i < deathTable.Length - 1; i++) {
+                Write("Died " + i + " times in " + deathTable[i] + " games");
+            }
+            Write("Died >=" + (deathTable.Length - 1) + " times in " + deathTable[deathTable.Length - 1] + " games");
 
             Console.ReadLine();
 

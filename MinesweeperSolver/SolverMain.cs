@@ -11,6 +11,9 @@ namespace MinesweeperSolver {
 
     class SolverMain {
 
+        public static readonly BigInteger PARALLEL_MINIMUM = new BigInteger(10000);
+        public static readonly BigInteger MAX_BRUTE_FORCE_ITERATIONS = new BigInteger(10000000);
+
         public const int BRUTE_FORCE_ANALYSIS_TREE_DEPTH = 20;
         public const int MAX_BFDA_SOLUTIONS = 400;
         public const int BRUTE_FORCE_ANALYSIS_MAX_NODES = 150000;
@@ -34,6 +37,25 @@ namespace MinesweeperSolver {
                 information.Write("Game has not yet started - currently unable to provide help");
                 return new SolverActionHeader();
             }
+
+            // are we walking down a brute force deep analysis tree?
+            BruteForceAnalysis lastBfa = information.GetBruteForceAnalysis();
+            if (lastBfa != null) {   // yes
+                SolverTile expectedMove = lastBfa.GetExpectedMove();
+                if (expectedMove != null && expectedMove.IsHidden()) {    // the expected move wasn't played !
+                    information.Write("The expected Brute Force Analysis move " + expectedMove.AsText() + " wasn't played");
+                    information.SetBruteForceAnalysis(null);
+                } else {
+                    SolverAction move = lastBfa.GetNextMove();
+                    if (move != null) {
+                        information.Write("Next Brute Force Deep Analysis move is " + move.AsText());
+                        actions = new List<SolverAction>(1);
+                        actions.Add(move);
+                        return BuildActionHeader(information, actions);
+                    }
+                }
+            }
+
 
             actions = FindTrivialActions(information);
 
@@ -74,13 +96,34 @@ namespace MinesweeperSolver {
             }
 
             List<SolverTile> witnessed = new List<SolverTile>(witnessedSet);
-            int livingTilesLeft = information.GetTilesLeft() - information.GetExcludedTiles().Count;
-            int livingMinesLeft = information.GetMinesLeft() - information.GetExcludedMineCount();
-            int offEdgeTilesLeft = information.GetTilesLeft() - witnessed.Count - information.GetExcludedTiles().Count;
+            int livingTilesLeft = information.GetTilesLeft();
+            int livingMinesLeft = information.GetMinesLeft();
+            int offEdgeTilesLeft = information.GetTilesLeft() - witnessed.Count;
 
-            information.Write("Excluded tiles " + information.GetExcludedTiles().Count);
-            information.Write("Excluded witnesses " + information.GetExcludedWitnesses().Count);
-            information.Write("Excluded mines " + information.GetExcludedMineCount());
+            //information.Write("Excluded tiles " + information.GetExcludedTiles().Count + " out of " + information.GetTilesLeft());
+            //information.Write("Excluded witnesses " + information.GetExcludedWitnesses().Count);
+            //information.Write("Excluded mines " + information.GetExcludedMineCount() + " out of " + information.GetMinesLeft());
+
+            // if there are no living mines but some living tiles then the living tiles can be cleared
+            if (livingMinesLeft == 0 && livingTilesLeft > 0) {
+                information.Write("There are no living mines left - all living tiles must be clearable");
+
+                for (int x = 0; x < information.description.width; x++) {
+                    for (int y = 0; y < information.description.height; y++) {
+                        SolverTile tile = information.GetTile(x, y);
+                        if (tile.IsHidden() && !tile.IsMine()) {
+                            actions.Add(new SolverAction(tile, ActionType.Clear, 1));
+                        }
+                    }
+                }
+                return BuildActionHeader(information, actions);
+            }
+
+
+            SolutionCounter solutionCounter = new SolutionCounter(information, witnesses, witnessed, livingTilesLeft, livingMinesLeft);
+            solutionCounter.Process();
+            information.Write("Solution counter says " + solutionCounter.GetSolutionCount() + " solutions and " + solutionCounter.getClearCount() + " clears");
+
 
             //ProbabilityEngine pe = new ProbabilityEngine(information, witnesses, witnessed, information.GetTilesLeft(), information.GetMinesLeft());
             ProbabilityEngine pe = new ProbabilityEngine(information, witnesses, witnessed, livingTilesLeft, livingMinesLeft);
@@ -98,14 +141,83 @@ namespace MinesweeperSolver {
                     actions.Add(new SolverAction(tile, ActionType.Clear, 1));
                 }
                 information.Write("The probability engine has found " + localClears.Count + " safe Local Clears");
+
+                // add any mines to it
+                List<SolverTile> minesFound = pe.GetMinesFound();
+                foreach (SolverTile tile in minesFound) {   // place each mine found into an action
+                    information.MineFound(tile);
+                    actions.Add(new SolverAction(tile, ActionType.Flag, 0));
+                }
+                information.Write("The probability engine has found " + minesFound.Count + " mines");
+
+
                 return BuildActionHeader(information, actions);
             }
 
             if (pe.GetBestEdgeProbability() == 1) {
-                List<SolverAction> clears = pe.GetBestCandidates(1);
-                information.Write("The probability engine has found " + clears.Count + " safe Clears");
-                return BuildActionHeader(information, clears);
+                actions = pe.GetBestCandidates(1);
+                information.Write("The probability engine has found " + actions.Count + " safe Clears");
+
+                // add any mines to it
+                List<SolverTile> minesFound = pe.GetMinesFound();
+                foreach (SolverTile tile in minesFound) {   // place each mine found into an action
+                    information.MineFound(tile);
+                    actions.Add(new SolverAction(tile, ActionType.Flag, 0));
+                }
+                information.Write("The probability engine has found " + minesFound.Count + " mines");
+
+                return BuildActionHeader(information, actions);
             }
+
+            // dead edge (all tiles on the edge are dead and there is only one mine count value)
+            if (pe.GetDeadEdge().Count != 0) {
+                SolverTile tile = pe.GetDeadEdge()[0];
+                information.Write("Probability engine has found a dead area, guessing at " + tile.AsText());
+                double probability = Combination.DivideBigIntegerToDouble(BigInteger.One, pe.GetDeadEdgeSolutionCount(), 6);
+                actions.Add(new SolverAction(tile, ActionType.Clear, probability));
+                return BuildActionHeader(information, actions);
+            }
+
+            // Isolated edges found (all adjacent tiles are also on the edge and there is only one mine count value)
+            if (pe.GetOutcome() == ProbabilityEngine.Outcome.ISOLATED_EDGE) {
+                information.Write("Probability engine has found an isolated area");
+
+                Cruncher cruncher = pe.getIsolatedEdgeCruncher();
+
+                // determine all possible solutions
+                cruncher.Crunch();
+
+                // determine best way to solver them
+                BruteForceAnalysis bfa = cruncher.GetBruteForceAnalysis();
+                bfa.process();
+
+                // if after trying to process the data we can't complete then abandon it
+                if (!bfa.IsComplete()) {
+                    information.Write("Abandoned the Brute Force Analysis after " + bfa.GetNodeCount() + " steps");
+                    bfa = null;
+
+                } else { // otherwise try and get the best long term move
+                    information.Write("Built probability tree from " + bfa.GetSolutionCount() + " solutions in " + bfa.GetNodeCount() + " steps");
+                    SolverAction move = bfa.GetNextMove();
+                    if (move != null) {
+                        information.SetBruteForceAnalysis(bfa);  // save the details so we can walk the tree
+                        information.Write("Brute Force Analysis: " + move.AsText());
+                        actions.Add(move);
+                        return BuildActionHeader(information, actions);
+                    } else if (bfa.GetAllDead()) {
+
+                        SolverTile tile = cruncher.getTiles()[0];
+                        information.Write("Brute Force Analysis has decided all tiles are dead on the Isolated Edge, guessing at " + tile.AsText());
+                        double probability = Combination.DivideBigIntegerToDouble(BigInteger.One, bfa.GetSolutionCount(), 6);
+                        actions.Add(new SolverAction(tile, ActionType.Clear, probability));
+                        return BuildActionHeader(information, actions);
+
+                    } else {
+                        information.Write("Brute Force Analysis: no move found!");
+                    }
+                }
+            }
+
 
             // after this point we know the probability engine didn't return any certain clears. But there are still some special cases when everything off edge is either clear or a mine
 
@@ -114,10 +226,10 @@ namespace MinesweeperSolver {
                 information.Write("Looking for the certain moves off the edge found by the probability engine");
                 bool clear;
                  if (pe.GetOffEdgeProbability() == 1) {
-                    //Console.WriteLine("All off edge tiles are clear");
+                    information.Write("All off edge tiles are clear");
                     clear = true;
                 } else {
-                    //Console.WriteLine("All off edge tiles are mines");
+                    information.Write("All off edge tiles are mines");
                     clear = false;
                 }
 
@@ -126,7 +238,7 @@ namespace MinesweeperSolver {
 
                         SolverTile tile = information.GetTile(x, y);
 
-                        if (tile.IsHidden() && !witnessedSet.Contains(tile) && !tile.IsExcluded()) {
+                        if (tile.IsHidden() && !witnessedSet.Contains(tile)) {
                             if (clear) {
                                 information.Write(tile.AsText() + " is clear");
                                 actions.Add(new SolverAction(tile, ActionType.Clear, 1));
@@ -141,7 +253,15 @@ namespace MinesweeperSolver {
                 }
 
                 if (actions.Count > 0) {
-                    //information.Write("The solver has determined all off edge tiles must be safe");
+
+                    // add any mines to it
+                    List<SolverTile> minesFound = pe.GetMinesFound();
+                    foreach (SolverTile tile in minesFound) {   // place each mine found into an action
+                        information.MineFound(tile);
+                        actions.Add(new SolverAction(tile, ActionType.Flag, 0));
+                    }
+                    information.Write("The probability engine has found " + minesFound.Count + " mines");
+
                     return BuildActionHeader(information, actions);
                 } else {
                     Console.WriteLine("No Actions found!");
@@ -159,49 +279,57 @@ namespace MinesweeperSolver {
             // if there aren't many possible solutions then do a brute force search
             if (pe.GetSolutionCount() <= MAX_BFDA_SOLUTIONS) {
 
+                //if (minesFound.Count > 0) {
+                //    information.Write("Not doing a brute force analysis because we found some mines using the probability engine");
+                //    return BuildActionHeader(information, actions);
+                //}
+
+                // find a set of independent witnesses we can use as the base of the iteration
                 pe.GenerateIndependentWitnesses();
 
-                List<SolverTile> allCoveredTiles = new List<SolverTile>();
+                BigInteger expectedIterations = pe.GetIndependentIterations() * SolverMain.Calculate(livingMinesLeft - pe.GetIndependentMines(), livingTilesLeft - pe.GetIndependentTiles());
 
-                for (int x = 0; x < information.description.width; x++) {
-                    for (int y = 0; y < information.description.height; y++) {
-                        SolverTile tile = information.GetTile(x, y);
-                        if (tile.IsHidden() && !tile.IsExcluded() && !tile.IsMine()) {
-                            allCoveredTiles.Add(tile);
+                information.Write("Expected Brute Force iterations " + expectedIterations);
+
+                // do the brute force if there are not too many iterations
+                if (expectedIterations < MAX_BRUTE_FORCE_ITERATIONS) {
+
+                    List<SolverTile> allCoveredTiles = new List<SolverTile>();
+
+                    for (int x = 0; x < information.description.width; x++) {
+                        for (int y = 0; y < information.description.height; y++) {
+                            SolverTile tile = information.GetTile(x, y);
+                            if (tile.IsHidden() && !tile.IsMine()) {
+                                allCoveredTiles.Add(tile);
+                            }
                         }
                     }
-                }
 
-                WitnessWebIterator iterator = new WitnessWebIterator(pe, allCoveredTiles, -1);
+                    WitnessWebIterator[] iterators = BuildParallelIterators(information, pe, allCoveredTiles, expectedIterations);
+                    BruteForceAnalysis bfa = Cruncher.PerformBruteForce(information, iterators, pe.GetDependentWitnesses());
 
-                Cruncher bruteForce = new Cruncher(information, iterator, pe);
+                    bfa.process();
 
-                int solutionCount = bruteForce.Crunch();
+                    // if after trying to process the data we can't complete then abandon it
+                    if (!bfa.IsComplete()) {
+                        information.Write("Abandoned the Brute Force Analysis after " + bfa.GetNodeCount() + " steps");
+                        bfa = null;
 
-                information.Write("Solutions found by brute force " + solutionCount + " after " + iterator.GetIterations() + " iterations");
-
-                BruteForceAnalysis bfa = bruteForce.GetBruteForceAnalysis();
-
-                bfa.process();
-
-                // if after trying to process the data we can't complete then abandon it
-                if (!bfa.IsComplete()) {
-                    information.Write("Abandoned the Brute Force Analysis after " + bfa.GetNodeCount() + " steps");
-                    bfa = null;
-
-                } else { // otherwise try and get the best long term move
-                    information.Write("Built probability tree from " + bfa.GetSolutionCount() + " solutions in " + bfa.GetNodeCount() + " steps");
-                    SolverAction move = bfa.GetNextMove();
-                    if (move != null) {
-                        information.Write("Brute Force Analysis: " + move.AsText());
-                        actions.Add(move);
-                        return BuildActionHeader(information, actions);
-                    } else {
-                        information.Write("Brute Force Analysis: no move found!");
+                    } else { // otherwise try and get the best long term move
+                        information.Write("Built probability tree from " + bfa.GetSolutionCount() + " solutions in " + bfa.GetNodeCount() + " steps");
+                        SolverAction move = bfa.GetNextMove();
+                        if (move != null) {
+                            information.SetBruteForceAnalysis(bfa);  // save the details so we can walk the tree
+                            information.Write("Brute Force Analysis: " + move.AsText());
+                            actions.Add(move);
+                            return BuildActionHeader(information, actions);
+                        } else {
+                            information.Write("Brute Force Analysis: no move found!");
+                        }
                     }
+                } else {
+                    information.Write("Too many iterations, Brute Force not atempted");
                 }
-
-                //var bfda = new BruteForceAnalysis(bruteForce.allSolutions, iterator.tiles, 1000);  // the tiles and the solutions need to be in sync
 
             }
 
@@ -211,6 +339,7 @@ namespace MinesweeperSolver {
                     information.Write("getting an off edge guess");
                     SolverTile tile = OffEdgeGuess(information, witnessedSet);
                     SolverAction action = new SolverAction(tile, ActionType.Clear, pe.GetOffEdgeProbability());
+                    information.Write(action.AsText());
                     actions.Add(action);
                 } else {
                     if (information.GetDeadTiles().Count > 0) {
@@ -220,7 +349,7 @@ namespace MinesweeperSolver {
                             tile = deadTile;
                             break;
                         }
-                        SolverAction action = new SolverAction(tile, ActionType.Clear, pe.GetProbability(tile));
+                        SolverAction action = new SolverAction(tile, ActionType.Clear, 0.5);  // probability may not be 0.5  
                         actions.Add(action);
                     }
                 }
@@ -265,7 +394,7 @@ namespace MinesweeperSolver {
 
             actions.AddRange(ScanForTrivialActions(information, information.GetWitnesses()));
 
-            actions.AddRange(ScanForTrivialActions(information, information.GetExcludedWitnesses()));
+            //actions.AddRange(ScanForTrivialActions(information, information.GetExcludedWitnesses()));
 
             information.Write("Found " + actions.Count + " trivial actions");
 
@@ -374,19 +503,19 @@ namespace MinesweeperSolver {
 
             // see if the corners are available
             SolverTile bestGuess = information.GetTile(0, 0);
-            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess) && !bestGuess.IsExcluded()) {
+            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess)) {
                 return bestGuess;
             }
             bestGuess = information.GetTile(0, information.description.height - 1);
-            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess) && !bestGuess.IsExcluded()) {
+            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess)) {
                 return bestGuess;
             }
             bestGuess = information.GetTile(information.description.width - 1, 0);
-            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess) && !bestGuess.IsExcluded()) {
+            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess)) {
                 return bestGuess;
             }
             bestGuess = information.GetTile(information.description.width - 1, information.description.height - 1);
-            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess) && !bestGuess.IsExcluded()) {
+            if (bestGuess.IsHidden() && !witnessedSet.Contains(bestGuess)) {
                 return bestGuess;
             }
 
@@ -398,7 +527,7 @@ namespace MinesweeperSolver {
 
                     SolverTile tile = information.GetTile(x, y);
 
-                    if (tile.IsHidden() && !tile.IsExcluded() && !witnessedSet.Contains(tile)) {
+                    if (tile.IsHidden() && !witnessedSet.Contains(tile)) {
                         AdjacentInfo adjInfo = information.AdjacentTileInfo(tile);
                         if (adjInfo.hidden < bestGuessCount) {
                             bestGuess = tile;
@@ -432,6 +561,47 @@ namespace MinesweeperSolver {
             return result;
 
         }
+
+        // break a witness web search into a number of non-overlapping iterators
+        private static WitnessWebIterator[] BuildParallelIterators(SolverInfo information, ProbabilityEngine pe, List<SolverTile> allCovered, BigInteger expectedIterations) {
+
+            information.Write("Building parallel iterators");
+
+            //information.Write("Non independent iterations = " + pe.GetNonIndependentIterations(mines));
+
+            int minesLeft = information.GetMinesLeft();
+
+            //the number of witnesses available
+            int totalWitnesses = pe.GetIndependentWitnesses().Count + pe.GetDependentWitnesses().Count;
+
+            // if there is only one cog then we can't lock it,so send back a single iterator
+            if (pe.GetIndependentWitnesses().Count == 1 && pe.GetIndependentMines() >= minesLeft || expectedIterations.CompareTo(PARALLEL_MINIMUM) < 0 || totalWitnesses == 0) {
+                information.Write("Only a single iterator will be used");
+                WitnessWebIterator[] one = new WitnessWebIterator[1];
+                one[0] = new WitnessWebIterator(information, pe.GetIndependentWitnesses(), pe.GetDependentWitnesses(), allCovered, minesLeft, information.GetTilesLeft(), -1);
+                return one;
+            }
+
+            int witMines = pe.GetIndependentWitnesses()[0].GetMinesToFind();
+            int squares = pe.GetIndependentWitnesses()[0].GetAdjacentTiles().Count;
+
+            BigInteger bigIterations = Calculate(witMines, squares);
+
+            int iter = (int) bigIterations;
+
+            information.Write("The first cog has " + iter + " iterations, so parallel processing is possible");
+
+            WitnessWebIterator[] result = new WitnessWebIterator[iter];
+
+            for (int i = 0; i < iter; i++) {
+                // create a iterator with a lock first got at position i
+                result[i] = new WitnessWebIterator(information, pe.GetIndependentWitnesses(), pe.GetDependentWitnesses(), allCovered, minesLeft, information.GetTilesLeft(), i);
+            }
+
+            return result;
+
+        }
+
 
         public static BigInteger Calculate(int mines, int squares) {
             return binomial.Generate(mines, squares);

@@ -10,6 +10,8 @@ namespace MinesweeperSolver {
         // used to hold all the solutions left in the game
         public class SolutionTable {
 
+            private readonly object locker = new object();
+
             private readonly BruteForceAnalysis bfa;
             private readonly sbyte[][] solutions;
             private int size = 0;
@@ -20,8 +22,10 @@ namespace MinesweeperSolver {
             }
 
             public void AddSolution(sbyte[] solution) {
-                solutions[size] = solution;
-                size++;
+                lock(locker) {
+                    solutions[size] = solution;
+                    size++;
+                }
             }
 
             public int GetSize() {
@@ -562,7 +566,7 @@ namespace MinesweeperSolver {
             */
 
             allSolutions.AddSolution(solution);
-
+ 
         }
 
         public void process() {

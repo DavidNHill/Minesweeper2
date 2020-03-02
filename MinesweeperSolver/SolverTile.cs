@@ -19,9 +19,9 @@ namespace MinesweeperSolver {
 
         private bool exhausted = false;    // an exhausted tile is where it is cleared and all its neighbours are either cleared or a mine
 
-        private bool newGrowth = true;     // a tile is new growth the first time it is revealed. Once it has been analysed by the Probability Engine it stops being new growth.
+        //private bool newGrowth = true;     // a tile is new growth the first time it is revealed. Once it has been analysed by the Probability Engine it stops being new growth.
 
-        private bool excluded = false;    // an excluded tile is one which no longer needs to be included in the propability engine since it no longer affects other tiles
+        //private bool excluded = false;    // an excluded tile is one which no longer needs to be included in the propability engine since it no longer affects other tiles
 
         private List<SolverTile> adjacentTiles = null;
 
@@ -85,13 +85,13 @@ namespace MinesweeperSolver {
             this.isDead = true;
         }
 
-        public bool IsNewGrowth() {
-            return newGrowth;
-        }
+        //public bool IsNewGrowth() {
+        //    return newGrowth;
+        //}
 
-        public void SetExamined() {
-            this.newGrowth = false;
-        }
+        //public void SetExamined() {
+        //    this.newGrowth = false;
+        //}
 
         public bool IsDead() {
  
@@ -106,6 +106,7 @@ namespace MinesweeperSolver {
             this.adjacentTiles = adjTiles;
         }
 
+        /*
         public void SetExcluded() {
             this.excluded = true;
         }
@@ -113,6 +114,7 @@ namespace MinesweeperSolver {
         public bool IsExcluded() {
             return this.excluded;
         }
+        */
 
         public bool IsEqual(SolverTile tile) {
             if (this.x == tile.x && this.y == tile.y) {

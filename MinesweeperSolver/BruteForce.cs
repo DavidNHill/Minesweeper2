@@ -1,6 +1,8 @@
 ﻿using System;
+using System.CodeDom;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace MinesweeperSolver {
 /**
@@ -11,50 +13,73 @@ public class Cruncher {
 
         public const sbyte BOMB = -10;
 
-        readonly private SolverInfo board;
-        private WitnessWebIterator iterator;
+        readonly private SolverInfo information;
+        private readonly WitnessWebIterator iterator;
         readonly private List<SolverTile> tiles;
         readonly private List<BoxWitness> witnesses;
         readonly private sbyte[] currentFlagsTiles;
         readonly private sbyte[] currentFlagsWitnesses;
 
-        //private int asIndex = 0;
-        //readonly private int[][] allSolutions;
+        private int candidates = 0;  // number of samples which satisfy the current board state
         private readonly BruteForceAnalysis bfa;
 
-        public Cruncher(SolverInfo board, WitnessWebIterator iterator, ProbabilityEngine pe) {
+        public Cruncher(SolverInfo information, WitnessWebIterator iterator, List<BoxWitness> witnesses, BruteForceAnalysis bfa) {
 
-            this.board = board;
+            this.information = information;
             this.iterator = iterator;   // the iterator
             this.tiles = iterator.getTiles();  // the tiles the iterator is iterating over
-            this.witnesses = pe.GetDependentWitnesses();  // the dependent witnesses (class BoxWitness) which need to be checked to see if they are satisfied
+            this.witnesses = witnesses;  // the dependent witnesses (class BoxWitness) which need to be checked to see if they are satisfied
 
-            //this.allSolutions = new int[SolverMain.MAX_BFDA_SOLUTIONS][];  // this is where the solutions needed by the Brute Force Analysis class are held
-
-            this.bfa = new BruteForceAnalysis(board, iterator.getTiles(), SolverMain.MAX_BFDA_SOLUTIONS, null);
+            this.bfa = bfa;
 
             // determine how many found mines are currently next to each tile
             this.currentFlagsTiles = new sbyte[this.tiles.Count];
             for (int i = 0; i < this.tiles.Count; i++) {
-                this.currentFlagsTiles[i] = (sbyte) board.AdjacentTileInfo(this.tiles[i]).mines;
+                this.currentFlagsTiles[i] = (sbyte) this.information.AdjacentTileInfo(this.tiles[i]).mines;
             }
 
 
             // determine how many found mines are currently next to each witness
             this.currentFlagsWitnesses = new sbyte[this.witnesses.Count];
             for (int i = 0; i < this.witnesses.Count; i++) {
-                this.currentFlagsWitnesses[i] = (sbyte) board.AdjacentTileInfo(this.witnesses[i].GetTile()).mines;
+                this.currentFlagsWitnesses[i] = (sbyte) this.information.AdjacentTileInfo(this.witnesses[i].GetTile()).mines;
             }
 
         }
 
+        public static BruteForceAnalysis PerformBruteForce(SolverInfo information, WitnessWebIterator[] iterators, List<BoxWitness> witnesses) {
+
+            BruteForceAnalysis bfa = new BruteForceAnalysis(information, iterators[0].getTiles(), SolverMain.MAX_BFDA_SOLUTIONS, null);
+
+            Cruncher[] crunchers = new Cruncher[iterators.Length];
+            Task[] tasks = new Task[iterators.Length];
+
+            for (int i=0; i < iterators.Length; i++) {
+
+                crunchers[i] = new Cruncher(information, iterators[i], witnesses, bfa);
+                Cruncher cruncher = crunchers[i];
+
+                tasks[i] = Task.Factory.StartNew(() => { cruncher.Crunch(); });
+            }
+            Task.WaitAll(tasks);
+ 
+            int solutions = 0;
+            int iterations = 0;
+            for (int i = 0; i < iterators.Length; i++) {
+                solutions = solutions + crunchers[i].GetSolutionsFound();
+                iterations = iterations + iterators[i].GetIterations();
+            }
+
+            information.Write("Solutions found by brute force " + solutions + " after " + iterations + " iterations");
+ 
+            return bfa;
+
+        }
 
 
-        public int Crunch() {
+        public void Crunch() {
 
             int[] sample = this.iterator.GetSample();
-
-            int candidates = 0;  // number of samples which satisfy the current board state
 
             while (sample != null) {
 
@@ -66,8 +91,10 @@ public class Cruncher {
 
             }
 
-            return candidates;
+        }
 
+        public List<SolverTile> getTiles() {
+            return iterator.getTiles();
         }
 
         // this checks whether the positions of the mines are a valid candidate solution
@@ -132,10 +159,7 @@ public class Cruncher {
             }
 
             bfa.AddSolution(solution);
-
-            //this.allSolutions[asIndex] = solution;
-            //asIndex++;
-
+ 
             /*
             string output = "";
             for (int i = 0; i < mine.length; i++) {
@@ -152,6 +176,9 @@ public class Cruncher {
             return this.bfa;
         }
 
+        public int GetSolutionsFound() {
+            return this.candidates;
+        }
     }
 
 
@@ -171,13 +198,10 @@ public class Cruncher {
 
         private bool done = false;
 
-        readonly private ProbabilityEngine probabilityEngine;
-
+        /*
         // if rotation is -1 then this does all the possible iterations
         // if rotation is not - 1 then this locks the first 'cog' in that position and iterates the remaining cogs.  This allows parallel processing based on the position of the first 'cog'
         public WitnessWebIterator(ProbabilityEngine pe, List<SolverTile> allCoveredTiles, int rotation) {
-
-            //console.log("Creating Iterator");
 
             this.tiles = new List<SolverTile>();  // list of tiles being iterated over
 
@@ -189,7 +213,7 @@ public class Cruncher {
 
             this.done = false;
 
-            this.probabilityEngine = pe;
+            //this.probabilityEngine = pe;
 
             // if we are setting the position of the top cog then it can't ever change
             if (rotation == -1) {
@@ -200,7 +224,7 @@ public class Cruncher {
 
             List<SolverTile> loc = new List<SolverTile>();  // array of locations
 
-            List<BoxWitness> indWitnesses = this.probabilityEngine.GetIndependentWitnesses();
+            List<BoxWitness> indWitnesses = pe.GetIndependentWitnesses();
 
             int cogi = 0;
             int indSquares = 0;
@@ -230,7 +254,6 @@ public class Cruncher {
             for (int i = 0; i < allCoveredTiles.Count; i++) {
 
                 SolverTile l = allCoveredTiles[i];
-
                 bool skip = false;
                 for (int j = 0; j < loc.Count; j++) {
 
@@ -284,11 +307,11 @@ public class Cruncher {
             this.sample = new int[minesLeft];  // make the sample array the size of the number of mines
 
             // if we are locking and rotating the top cog then do it
-            //if (rotation != -1) {
-            //    for (var i = 0; i < rotation; i++) {
-            //        this.cogs[0].getSample(0);
-            //    }
-            //}
+            if (rotation != -1) {
+                for (var i = 0; i < rotation; i++) {
+                    this.cogs[0].GetNextSample();
+                }
+            }
 
             // now set up the initial sample position
             for (int i = 0; i < this.top; i++) {
@@ -297,10 +320,135 @@ public class Cruncher {
                     this.sample[this.mineOffset[i] + j] = this.squareOffset[i] + s[j];
                 }
             }
-
-
         }
+        */
 
+        // if rotation is -1 then this does all the possible iterations
+        // if rotation is not - 1 then this locks the first 'cog' in that position and iterates the remaining cogs.  This allows parallel processing based on the position of the first 'cog'
+        public WitnessWebIterator(SolverInfo information, List<BoxWitness> independentWitnesses, List<BoxWitness> depdendentWitnesses
+            , List<SolverTile> allCoveredTiles, int minesLeft, int tilesLeft, int rotation) {
+
+            this.tiles = new List<SolverTile>();  // list of tiles being iterated over
+
+            int cogs;
+            if (independentWitnesses == null) {
+                cogs = 1;
+            } else {
+                cogs = independentWitnesses.Count + 1;
+            }
+ 
+            this.cogs = new SequentialIterator[cogs]; // array of cogs
+            this.squareOffset = new int[cogs];  // int array
+            this.mineOffset = new int[cogs];   // int array
+
+            this.iterationsDone = 0;
+
+            this.done = false;
+
+            //this.probabilityEngine = pe;
+
+            // if we are setting the position of the top cog then it can't ever change
+            if (rotation == -1) {
+                this.bottom = 0;
+            } else {
+                this.bottom = 1;
+            }
+
+            List<SolverTile> loc = new List<SolverTile>();  // array of locations
+
+            int cogi = 0;
+            int indSquares = 0;
+            int indMines = 0;
+
+            // create an array of locations in the order of independent witnesses
+            if (independentWitnesses != null) {
+                foreach (BoxWitness w in independentWitnesses) {
+
+                    this.squareOffset[cogi] = indSquares;
+                    this.mineOffset[cogi] = indMines;
+                    this.cogs[cogi] = new SequentialIterator(w.GetMinesToFind(), w.GetAdjacentTiles().Count);
+                    cogi++;
+
+                    indSquares = indSquares + w.GetAdjacentTiles().Count;
+                    indMines = indMines + w.GetMinesToFind();
+
+                    loc.AddRange(w.GetAdjacentTiles());
+
+                }
+            }
+ 
+
+            //System.out.println("Mines left = " + (mines - indMines));
+            //System.out.println("Squrs left = " + (web.getSquares().length - indSquares));
+
+            // the last cog has the remaining squares and mines
+
+            //add the rest of the locations
+            for (int i = 0; i < allCoveredTiles.Count; i++) {
+
+                SolverTile l = allCoveredTiles[i];
+                bool skip = false;
+                for (int j = 0; j < loc.Count; j++) {
+
+                    SolverTile m = loc[j];
+
+                    if (l.IsEqual(m)) {
+                        skip = true;
+                        break;
+                    }
+                }
+                if (!skip) {
+                    loc.Add(l);
+                }
+            }
+
+            this.tiles = loc;
+
+            information.Write("Mines left " + minesLeft);
+            information.Write("Independent Mines " + indMines);
+            information.Write("Tiles left " + tilesLeft);
+            information.Write("Independent tiles " + indSquares);
+
+
+            // if there are more mines left then squares then no solution is possible
+            // if there are not enough mines to satisfy the minimum we know are needed
+            if (minesLeft - indMines > tilesLeft - indSquares
+                || indMines > minesLeft) {
+                this.done = true;
+                this.top = 0;
+                Console.WriteLine("Nothing to do in this iterator");
+                return;
+            }
+
+            // if there are no mines left then no need for a cog
+            if (minesLeft > indMines) {
+                this.squareOffset[cogi] = indSquares;
+                this.mineOffset[cogi] = indMines;
+                this.cogs[cogi] = new SequentialIterator(minesLeft - indMines, tilesLeft - indSquares);
+                this.top = cogi;
+            } else {
+                top = cogi - 1;
+            }
+
+            //this.top = this.cogs.Length - 1;
+
+            this.sample = new int[minesLeft];  // make the sample array the size of the number of mines
+
+            // if we are locking and rotating the top cog then do it
+            if (rotation != -1) {
+                for (var i = 0; i < rotation; i++) {
+                    this.cogs[0].GetNextSample();
+                }
+            }
+
+            // now set up the initial sample position
+            for (int i = 0; i < this.top; i++) {
+                int[] s = this.cogs[i].GetNextSample();
+                for (int j = 0; j < s.Length; j++) {
+                    this.sample[this.mineOffset[i] + j] = this.squareOffset[i] + s[j];
+                }
+            }
+        }
 
         public int[] GetSample() {
 

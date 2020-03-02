@@ -14,6 +14,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)BruteForceAnalysis.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Combination.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)PrimeSieve.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SolutionCounter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ProbabilityEngine.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)SolverAction.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)SolverActionHeader.cs" />
